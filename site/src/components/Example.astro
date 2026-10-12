@@ -1,0 +1,46 @@
+---
+import { durationOf } from "../figure/model";
+import type { CheckedExample } from "../queries/examples-policy";
+import Snippet from "./Snippet.astro";
+
+interface Props {
+  example: CheckedExample;
+}
+
+const { example } = Astro.props;
+const DEMO = "https://agris-demo.hebilicious.workers.dev";
+
+const graphiql = `/graphql?query=${encodeURIComponent(example.query)}`;
+const body = JSON.stringify({ query: example.query });
+// Single-quoted for the shell, so only single quotes need escaping.
+const curl = `AGRIS=${DEMO}   # or your own gateway
+curl -s "$AGRIS/graphql" \\
+  -H 'content-type: application/json' \\
+  --data '${body.replaceAll("'", `'"'"'`)}'`;
+
+const window =
+  example.policy.mode === "no-store"
+    ? "Never stored"
+    : `Fresh ${durationOf(example.policy.maxAge)} · stale ${durationOf(example.policy.staleWhileRevalidate)}`;
+const demoWindow =
+  example.demoPolicy.mode === "no-store" ? "never stored" : `fresh ${durationOf(example.demoPolicy.maxAge)}`;
+const calls = example.upstreamCalls === 0 ? "No Pearl Abyss call" : `${example.upstreamCalls} Pearl Abyss ${example.upstreamCalls === 1 ? "call" : "calls"} on a miss`;
+---
+
+<article class="example" id={`example-${example.id}`}>
+  <header>
+    <h3>{example.title}</h3>
+    <p>{example.text}</p>
+  </header>
+  <dl class="example-meta">
+    <div><dt>Cache</dt><dd>{window}</dd></div>
+    <div><dt>Demo</dt><dd>{demoWindow}</dd></div>
+    <div><dt>Upstream</dt><dd>{calls}</dd></div>
+    <div><dt>Key</dt><dd><code title={example.identity}>{example.identity.slice(0, 12)}…</code></dd></div>
+  </dl>
+  <Snippet code={example.query} lang="graphql" label="Query" />
+  <div class="example-actions">
+    <a class="button small" href={graphiql}>Open in GraphiQL</a>
+    <button type="button" class="button small" data-copy={curl}>Copy as curl</button>
+  </div>
+</article>

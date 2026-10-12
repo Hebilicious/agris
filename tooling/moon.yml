@@ -1,0 +1,17 @@
+language: "typescript"
+layer: "tool"
+stack: "backend"
+
+project:
+  title: "Agris Tooling"
+  description: "Reads Worker configurations for the tools and tests that need them spelled as Wrangler or Vite configuration."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+tasks:
+  typecheck:
+    description: "Type-check the Worker configuration tooling."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    inputs: ["*.ts", "tsconfig.json", "package.json"]

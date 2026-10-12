@@ -1,0 +1,34 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@key"])
+
+type Item @key(fields: "id locale") {
+  id: ID!
+  locale: ItemLocale!
+  name: String
+  grade: Int
+}
+
+enum ItemLocale {
+  EN
+  DE
+  FR
+  ES_EU
+  ES
+  JA
+  KO
+  PT
+  RU
+  TH
+  TR
+  ZH_TW
+}
+
+type ItemSearchResult {
+  items: [Item!]!
+  totalCount: Int!
+}
+
+type Query {
+  item(id: ID!, locale: ItemLocale! = EN): Item
+  items(ids: [ID!]!, locale: ItemLocale! = EN): [Item!]!
+  searchItems(query: String!, locale: ItemLocale!, first: Int! = 50): ItemSearchResult!
+}

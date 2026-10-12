@@ -1,0 +1,79 @@
+language: "typescript"
+layer: "application"
+stack: "backend"
+
+project:
+  title: "Agris market Worker"
+  description: "The Agris market subgraph Worker with its Pearl Abyss coordinator, rate limit and concurrency bindings."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Inputs stay inside this project so it works unchanged when the repository is mounted inside another workspace.
+# Upstream packages reach this project's hashes through `^:` dependencies. Deploy modes are the modes
+# `cloudflare.config.ts` defines; `cf` deploys to the account the deployer's credentials select.
+tasks:
+  typecheck:
+    description: "Type-check the Agris market Worker and prove its configuration provides the bindings it reads."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "cloudflare.config.ts", "config-env.check.ts", "wrangler.config.ts"]
+
+  dry-run:
+    description: "Bundle the production Agris market Worker with `cf` without uploading it."
+    command: "cf"
+    args: ["deploy", "--dry-run", "--mode", "production"]
+    deps: ["typecheck"]
+    inputs: ["src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "cloudflare.config.ts", "config-env.check.ts", "wrangler.config.ts"]
+    options:
+      cache: false
+      mutex: "market-cloudflare-output"
+
+  dev:
+    description: "Run the Agris market Worker locally in its local mode on port 8791."
+    command: "cf"
+    args: ["dev", "--mode", "local", "--port", "8791"]
+    preset: "server"
+
+  deploy:
+    description: "Deploy the Agris market Worker in its production mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "production"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "market-cloudflare-output"
+
+  staging-deploy:
+    description: "Deploy the Agris market Worker in its staging mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "staging"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "market-cloudflare-output"
+
+  demo-dry-run:
+    description: "Bundle the hosted-demo Agris market Worker with `cf` without uploading it."
+    command: "cf"
+    args: ["deploy", "--dry-run", "--mode", "demo"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      mutex: "market-cloudflare-output"
+
+  demo-deploy:
+    description: "Deploy the Agris market Worker in its hosted-demo mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "demo"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "market-cloudflare-output"

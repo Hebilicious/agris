@@ -1,0 +1,259 @@
+---
+import { SCHEMA_COORDINATE_FRESHNESS, STALE_IF_ERROR_SECONDS } from "@agris/core";
+
+import Example from "../components/Example.astro";
+import Exchange from "../components/Exchange.astro";
+import Snippet from "../components/Snippet.astro";
+import Base from "../layouts/Base.astro";
+import { durationOf } from "../figure/model";
+import { CHECKED_EXAMPLES, DEMO_FRESHNESS_FLOOR_SECONDS } from "../queries/examples-policy";
+
+const repository = "https://github.com/Hebilicious/agris";
+const source = (path: string) => `${repository}/blob/main/${path}`;
+
+// The freshness table comes from the gateway's own policy, grouped by window, so the page cannot drift from the code.
+const windows = new Map<string, { fresh: number; stale: number; fields: string[] }>();
+for (const [coordinate, freshness] of Object.entries(SCHEMA_COORDINATE_FRESHNESS)) {
+  const key = `${freshness.maxAgeSeconds}/${freshness.staleWhileRevalidateSeconds}`;
+  const row = windows.get(key) ?? { fresh: freshness.maxAgeSeconds, stale: freshness.staleWhileRevalidateSeconds, fields: [] };
+  row.fields.push(coordinate);
+  windows.set(key, row);
+}
+const freshnessRows = [...windows.values()].sort((a, b) => a.fresh - b.fresh);
+
+interface Decision {
+  part: string;
+  title: string;
+  text: string;
+  source: { label: string; path: string };
+}
+
+const decisions: Decision[] = [
+  {
+    part: "Splitter and rods",
+    title: "Only the gateway is public",
+    text: "A federation gateway plans each query across two subgraphs and reaches them over Service Bindings, which have no URL. Nothing but the gateway can be called from the internet, so every request meets the same limits, cache and validation.",
+    source: { label: "workers/gateway/cloudflare.config.ts", path: "workers/gateway/cloudflare.config.ts" },
+  },
+  {
+    part: "Card cabinet",
+    title: "The catalog lives in memory",
+    text: "12,508 items in 12 languages and a trigram index per language are bundled into the catalog Worker. A name lookup or a search costs no subrequest and takes well under a millisecond. The data changes only with a release, so catalog-only answers keep for a year.",
+    source: { label: "docs/free-plan.md", path: "docs/free-plan.md" },
+  },
+  {
+    part: "Punch",
+    title: "One cache key per meaning",
+    text: "The gateway prints a canonical document and canonical variables and hashes them with SHA-256 and a policy version. Whitespace, argument order and variable key order do not change the key, so equivalent queries share one stored answer.",
+    source: { label: "packages/core/src/protocol/identity.ts", path: "packages/core/src/protocol/identity.ts" },
+  },
+  {
+    part: "Hourglasses",
+    title: "Each field sets its freshness; the shortest wins",
+    text: `Every field has a window, and an answer keeps for the shortest one it touches. Past it, the edge serves the stored answer at once while it refreshes in the background, and it may serve it for ${durationOf(STALE_IF_ERROR_SECONDS)} if a refresh fails. Search results and market summaries on items are never stored.`,
+    source: { label: "packages/core/src/protocol/cache-policy.ts", path: "packages/core/src/protocol/cache-policy.ts" },
+  },
+  {
+    part: "Stamp",
+    title: "An outage never overwrites a good answer",
+    text: "Every answer leaves stamped with the Cache-Control its fields chose. An answer with GraphQL errors is never stored, and when every subgraph call fails the gateway answers 503 no-store, so the edge keeps serving the last good copy instead.",
+    source: { label: "packages/core/src/protocol/response-classification.ts", path: "packages/core/src/protocol/response-classification.ts" },
+  },
+  {
+    part: "Carousel",
+    title: "One coordinator per Pearl Abyss host",
+    text: "Every upstream call goes through a Durable Object for its host. Identical requests in flight share one fetch, at most six distinct requests run at once, and the rest wait their turn. Nothing is kept once a request settles: it protects Pearl Abyss, it is not a cache.",
+    source: {
+      label: "packages/pearl-abyss/src/server/in-flight-coordinator.ts",
+      path: "packages/pearl-abyss/src/server/in-flight-coordinator.ts",
+    },
+  },
+  {
+    part: "Turnstile",
+    title: "Rate limits before any work",
+    text: "The client limiter runs first, inside the Worker, in each Cloudflare location: 60 requests a minute per IP on a self-hosted gateway. A refused request is a cheap 429 with Retry-After and never reaches a subgraph or Pearl Abyss.",
+    source: { label: "workers/gateway/src/public.ts", path: "workers/gateway/src/public.ts" },
+  },
+  {
+    part: "Gauge",
+    title: "Queries only, and bounded",
+    text: "Mutations and subscriptions are refused. A public query may nest 8 fields deep, select 150 fields and use 15 aliases, in a body of at most 64 KiB. GraphiQL's introspection gets its own limits: deeper, but it may list the schema's types only twice on one path.",
+    source: { label: "packages/core/src/protocol/document-limits.ts", path: "packages/core/src/protocol/document-limits.ts" },
+  },
+];
+
+const deploySteps = `curl -fsSL https://moonrepo.dev/install/proto.sh | bash
+git clone https://github.com/Hebilicious/agris.git && cd agris
+proto install && pnpm install
+pnpm --filter @agris/gateway-worker exec cf auth login
+moon run gateway:deploy`;
+---
+
+<Base
+  title="Agris: the Black Desert Central Market as a GraphQL API"
+  description="Agris turns the Black Desert Online Central Market into a typed GraphQL API with item names in 12 languages, name search and an edge cache. Deploy your own copy on Cloudflare Workers."
+>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <p class="eyebrow">Open source · Cloudflare Workers · MIT</p>
+      <h1 id="hero-title">The Black Desert Central Market, as a GraphQL API you run yourself.</h1>
+      <p class="lede">
+        Prices, stock, order books and price history for all 12 market regions, joined with item names in 12
+        languages, cached at the edge and gentle on Pearl Abyss. Below is how one query travels through it.
+      </p>
+      <div class="actions">
+        <a class="button primary" href="#deploy">Deploy your own</a>
+        <a class="button" href="/graphql">Open GraphiQL</a>
+        <a class="button" href={repository}>GitHub</a>
+      </div>
+      <Exchange />
+    </div>
+  </section>
+
+  <section id="design" aria-labelledby="design-title">
+    <div class="wrap">
+      <p class="eyebrow">Design decisions</p>
+      <h2 id="design-title">Why it is built this way</h2>
+      <p class="section-lede">Each part of the figure is a decision in the code. Each card names the part and the file.</p>
+      <ol class="decisions">
+        {
+          decisions.map((decision, index) => (
+            <li class="decision">
+              <p class="decision-part">
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                {decision.part}
+              </p>
+              <h3>{decision.title}</h3>
+              <p>{decision.text}</p>
+              <a class="decision-source" href={source(decision.source.path)}>
+                {decision.source.label}
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+
+      <div class="windows">
+        <h3>Freshness windows, as the gateway reads them</h3>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Fields</th>
+              <th scope="col">Fresh for</th>
+              <th scope="col">Then served stale while refreshing</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              freshnessRows.map((row) => (
+                <tr>
+                  <td>
+                    {row.fields.map((field) => (
+                      <code>{field}</code>
+                    ))}
+                  </td>
+                  <td>{durationOf(row.fresh)}</td>
+                  <td>{durationOf(row.stale)}</td>
+                </tr>
+              ))
+            }
+            <tr>
+              <td><code>Query.searchItems</code><code>Item.marketSummary</code></td>
+              <td colspan="2">Never stored</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          An answer takes the shortest window of every field it selects, and every stored answer may still be served
+          for {durationOf(STALE_IF_ERROR_SECONDS)} if a refresh fails (<code>stale-if-error</code>).
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="queries" class="alt" aria-labelledby="queries-title">
+    <div class="wrap">
+      <p class="eyebrow">Try a query</p>
+      <h2 id="queries-title">Example queries</h2>
+      <p class="section-lede">
+        Every example is checked against the schema and the public limits when this site is built, and its cache
+        window is the one the gateway chooses. Open one in GraphiQL, or copy it as <code>curl</code>. Item IDs are the
+        game's numeric IDs; the <a href={source("tools/graph/artifacts/client-schema.graphql")}>full schema</a> is in the
+        repository.
+      </p>
+      <div class="examples">
+        {CHECKED_EXAMPLES.map((example) => <Example example={example} />)}
+      </div>
+    </div>
+  </section>
+
+  <section id="deploy" aria-labelledby="deploy-title">
+    <div class="wrap">
+      <p class="eyebrow">Deploy your own</p>
+      <h2 id="deploy-title">Five commands to your own gateway</h2>
+      <p class="section-lede">
+        Self-hosting is the way to use Agris: your own rate limits, your own cache, your own hostname, and nobody else's
+        traffic.
+      </p>
+      <div class="deploy-grid">
+        <div>
+          <Snippet code={deploySteps} lang="sh" label="Deploy" />
+          <p>
+            This deploys <code>agris-market</code> and <code>agris-catalog</code>, then the <code>agris</code> gateway,
+            to the account your credentials select. Check it with <code>curl https://&lt;your-host&gt;/health</code>.
+          </p>
+        </div>
+        <div class="deploy-notes">
+          <h3>Any hostname works</h3>
+          <p>
+            The gateway answers on <code>agris.&lt;your-subdomain&gt;.workers.dev</code> because that needs no setup.
+            A custom domain or a route on any zone in your account works the same: add it to{" "}
+            <code>workers/gateway/cloudflare.config.ts</code> and deploy again.
+          </p>
+          <h3>What you need</h3>
+          <p>A Cloudflare account on the Workers Paid plan, plus <code>git</code> and <code>curl</code>. proto installs Node.js, pnpm and moon.</p>
+          <ul class="links">
+            <li><a href={source("docs/deploy.md")}>Deploy guide</a>: every setting, hostnames, rate limits, cost</li>
+            <li><a href={source("docs/free-plan.md")}>Free plan</a>: why it needs Workers Paid</li>
+            <li><a href={source(".agents/skills/deploy-agris/SKILL.md")}>deploy-agris skill</a>: let a coding agent do it</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="limits" aria-labelledby="limits-title">
+        <h3 id="limits-title">This site's demo is shared and small</h3>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              <th scope="col">Your own gateway</th>
+              <th scope="col">The shared demo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Requests per IP</th><td>60 a minute</td><td>10 a minute</td></tr>
+            <tr><th scope="row">Requests per Cloudflare location</th><td>no limit</td><td>120 a minute</td></tr>
+            <tr><th scope="row">Shortest cache window</th><td>5 s</td><td>{durationOf(DEMO_FRESHNESS_FLOOR_SECONDS)}</td></tr>
+            <tr><th scope="row">Pearl Abyss calls at once, per host</th><td>6</td><td>2, and 20 a minute</td></tr>
+          </tbody>
+        </table>
+        <p class="note">The demo may be switched off at any time. Use it to look around, then deploy your own.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="credits" class="alt" aria-labelledby="credits-title">
+    <div class="wrap credits">
+      <h2 id="credits-title">Credits</h2>
+      <p>
+        <a href="https://github.com/guy0090/api.arsha.io">Arsha</a> (api.arsha.io, by guy0090). Its open-source Central
+        Market API was the reference for the Pearl Abyss endpoints, request shapes and response fields Agris uses.
+        Thank you.
+      </p>
+      <p>
+        Fig 1 is drawn with <a href="https://github.com/wheresryan22/anatomy">anatomy</a>, Ryan's isometric figure kit
+        (MIT).
+      </p>
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,340 @@
+/*
+ * Fig 1's own styles, over the anatomy kit's `iso.css`. The kit's tokens default to its dark set; this page ships light
+ * first, so the light set is restated for `prefers-color-scheme: light` and the dark set applies otherwise.
+ */
+@media (prefers-color-scheme: light) {
+  .iso {
+    --anatomy-page: #f2f2ef;
+    --anatomy-card: #fbfbfa;
+    --anatomy-text: #57575a;
+    --anatomy-strong: #18181a;
+    --anatomy-muted: #8c8c90;
+    --anatomy-paper: #fbfbfa;
+    --anatomy-face: #ffffff;
+    --anatomy-top: #ffffff;
+    --anatomy-shade-0: #dcdcd9;
+    --anatomy-shade-1: #e5e5e2;
+    --anatomy-shade-2: #ededea;
+    --anatomy-shade-3: #f4f4f1;
+    --anatomy-lit-top: #ffffff;
+    --anatomy-lit-shade: #eeeeeb;
+    --anatomy-hi: #26262a;
+    --anatomy-mid: #8a8a8f;
+    --anatomy-lo: #b4b4b8;
+    --anatomy-faint: #d4d4d6;
+    --anatomy-lit: #000000;
+    --anatomy-halo: #8a8a80;
+    --anatomy-halo-opacity: 0.32;
+    --anatomy-dot: #3a3a3e;
+    --fx-cavity: #c9c9c4;
+    --fx-glass: #f6f6f3;
+    --fx-sand: #4a4a4f;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .iso {
+    --fx-cavity: #0a0a0a;
+    --fx-glass: #171717;
+    --fx-sand: #d4d4d4;
+  }
+}
+
+.fx-stage {
+  position: relative;
+  outline: none;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fx-stage:focus-visible {
+  outline: 1px solid var(--anatomy-muted);
+  outline-offset: 6px;
+}
+
+.fx-pulse {
+  fill: none;
+  stroke: var(--anatomy-lit);
+  stroke-width: 3.4px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-cavity {
+  fill: var(--fx-cavity);
+  stroke: none;
+}
+
+.fx-card[data-hidden] {
+  opacity: 0;
+}
+
+.fx-card-shadow {
+  filter: blur(2px);
+  opacity: 0.5;
+}
+
+.fx-hole {
+  fill: var(--anatomy-lit);
+}
+
+[data-card-stamp] {
+  opacity: 0;
+  transition: opacity 180ms var(--anatomy-ease);
+}
+
+[data-card-stamp][data-on] {
+  opacity: 1;
+}
+
+/* Lock plugs and hourglass windows are drawn in the plane of the rack's face. */
+.fx-plug {
+  fill: var(--anatomy-top);
+  stroke: var(--anatomy-mid);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-plug-ring {
+  fill: none;
+  stroke: var(--anatomy-faint);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-slot {
+  fill: none;
+  stroke: var(--anatomy-mid);
+  stroke-width: 0.9px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-keyhole {
+  fill: var(--anatomy-mid);
+}
+
+.fx-lock[data-on] .fx-keyhole {
+  fill: var(--anatomy-lit);
+}
+
+.fx-lock[data-on] .fx-slot {
+  stroke: var(--anatomy-lit);
+}
+
+.fx-lock[data-on] .fx-keyhole {
+  fill: var(--anatomy-mid);
+}
+
+.fx-lock[data-on] .fx-keyhole {
+  fill: var(--anatomy-lit);
+}
+
+.fx-lock[data-on] .fx-plug {
+  stroke: var(--anatomy-lit);
+}
+
+.fx-window {
+  fill: var(--fx-cavity);
+  stroke: var(--anatomy-lo);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-glass-fill {
+  fill: var(--fx-glass);
+}
+
+.fx-glass-edge {
+  fill: none;
+  stroke: var(--anatomy-mid);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-cap {
+  fill: none;
+  stroke: var(--anatomy-mid);
+  stroke-width: 1px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-sand {
+  fill: var(--fx-sand);
+  opacity: 0.85;
+}
+
+.fx-glass[data-phase="stale"] .fx-sand {
+  opacity: 0.55;
+}
+
+.fx-stream {
+  fill: none;
+  stroke: var(--fx-sand);
+  stroke-width: 0.5px;
+  stroke-dasharray: 0.6 0.9;
+  vector-effect: non-scaling-stroke;
+  animation: fx-fall 600ms linear infinite;
+}
+
+@keyframes fx-fall {
+  to {
+    stroke-dashoffset: -3;
+  }
+}
+
+/* Controls under the drawing. */
+.fx-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 18px;
+  margin-top: 14px;
+}
+
+.fx-sends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fx-button,
+.fx-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--anatomy-paper);
+  box-shadow: 0 0 0 1px var(--anatomy-faint);
+  color: var(--anatomy-strong);
+  font: 12.5px/1.2 var(--anatomy-mono);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    box-shadow 160ms var(--anatomy-ease),
+    background 160ms var(--anatomy-ease);
+}
+
+.fx-button:hover,
+.fx-chip:hover {
+  box-shadow: 0 0 0 1px var(--anatomy-mid);
+}
+
+.fx-button:active {
+  background: var(--anatomy-shade-3);
+}
+
+.fx-button:focus-visible,
+.fx-chip:focus-visible {
+  outline: 1px solid var(--anatomy-muted);
+  outline-offset: 3px;
+}
+
+.fx-key {
+  color: var(--anatomy-muted);
+  font-size: 10.5px;
+}
+
+.fx-term {
+  color: var(--anatomy-muted);
+  font-size: 11px;
+}
+
+.fx-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fx-speed-label {
+  margin-right: 4px;
+  color: var(--anatomy-muted);
+  font: 10.5px/1 var(--anatomy-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fx-chip[aria-pressed="true"] {
+  background: var(--anatomy-strong);
+  color: var(--anatomy-card);
+  box-shadow: 0 0 0 1px var(--anatomy-strong);
+}
+
+.fx-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * Phones: the bench keeps a legible fixed width and the stage scrolls sideways. The live script follows the part that
+ * is acting, and stops following for a few seconds when the reader drags. Edge fades and a hint show it scrolls.
+ */
+.fx-scroll-hint {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .fx .iso-plate {
+    overflow: hidden;
+  }
+
+  .fx .fx-stage {
+    margin: 0 -12px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    touch-action: auto;
+    mask-image: linear-gradient(90deg, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
+  }
+
+  .fx .fx-stage::-webkit-scrollbar {
+    display: none;
+  }
+
+  .fx .fx-stage .iso-svg {
+    width: 860px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .fx-scroll-hint {
+    display: block;
+    margin: 6px 0 0;
+    color: var(--anatomy-muted);
+    font: 10.5px/1.2 var(--anatomy-mono);
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .fx-sends {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .fx-button {
+    flex-wrap: wrap;
+    gap: 2px 6px;
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-stream {
+    animation: none;
+  }
+
+  [data-card-stamp] {
+    transition: none;
+  }
+}

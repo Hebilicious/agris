@@ -1,0 +1,40 @@
+---
+import { Code } from "astro:components";
+
+type Language = "graphql" | "json" | "sh" | "ts";
+
+interface Props {
+  code: string;
+  lang: Language;
+  label: string;
+}
+
+const { code, lang, label } = Astro.props;
+---
+
+<figure class="snippet">
+  <figcaption>
+    <span>{label}</span>
+    <button type="button" class="copy" data-copy={code} aria-label={`Copy ${label}`}>Copy</button>
+  </figcaption>
+  <Code code={code} lang={lang} themes={{ light: "min-light", dark: "min-dark" }} defaultColor={false} wrap />
+</figure>
+
+<script>
+  // One listener for every copy button on the page; the text to copy lives in the button's `data-copy` attribute.
+  document.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement) || target.dataset.copy === undefined) return;
+    const label = target.dataset.label ?? target.textContent ?? "Copy";
+    target.dataset.label = label;
+    try {
+      await navigator.clipboard.writeText(target.dataset.copy);
+      target.textContent = "Copied";
+    } catch {
+      target.textContent = "Copy failed";
+    }
+    setTimeout(() => {
+      target.textContent = label;
+    }, 1500);
+  });
+</script>

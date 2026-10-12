@@ -1,0 +1,15 @@
+{
+  "name": "@agris/site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Agris website and llms.txt, built with Astro and served as static assets by the demo gateway.",
+  "type": "module",
+  "dependencies": {
+    "@agris/core": "workspace:*",
+    "graphql": "catalog:"
+  },
+  "devDependencies": {
+    "astro": "catalog:",
+    "typescript": "catalog:"
+  }
+}

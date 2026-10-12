@@ -1,0 +1,34 @@
+# Agris
+
+> Agris is an open-source, read-only GraphQL API over the Black Desert Online Central Market. It runs as three Cloudflare Workers (a gateway plus catalog and market subgraphs) that you deploy to your own Cloudflare account. It serves prices, stock, order books, price history, hot items and the registration queue for 12 market regions, joined with item names in 12 languages and an item-name search.
+
+Use Agris by deploying your own copy. It answers on `agris.<subdomain>.workers.dev` by default, and on any custom domain or route you add. The hosted demo (https://agris-demo.hebilicious.workers.dev) is a shared courtesy instance limited to 10 requests per minute per IP and 120 per minute per Cloudflare location, with long cache times; it may be rate limited or switched off at any time. Do not point an application, agent workflow, scheduled job or bulk export at it.
+
+Key facts:
+
+- Endpoint: `POST /graphql` with JSON `{query, variables, operationName}`, or `GET /graphql?query=...`. Persisted queries: `GET /graphql?id=<sha256>&variables=<json>`. Health check: `GET /health`. A browser opening `/graphql` gets GraphiQL.
+- Queries only. Mutations and subscriptions are rejected. A public query may nest 8 fields deep, select 150 fields and use 15 aliases, in a body of at most 64 KiB; `429` with `Retry-After` means you were rate limited.
+- Caching: each field has a freshness window and a response takes the shortest it selects (order book and registrations 5 s, hot items and catalog 30 s, prices and listings 60 s, price history 1 h, item names 1 year). `searchItems` and `Item.marketSummary` are never stored. The cache key is the canonical query plus canonical variables, so equivalent queries share an entry. The shared demo raises every window to at least 10 minutes.
+- Item IDs are the game's numeric item IDs, passed as GraphQL `ID` strings.
+- Regions: EU, NA, ASIA, MENA, KR, RU, JP, TW, SA, CONSOLE_EU, CONSOLE_NA, CONSOLE_ASIA. Name locales: EN, DE, FR, ES, ES_EU, PT, RU, TR, JA, KO, TH, ZH_TW.
+- A self-hosted gateway allows 60 requests per minute per IP by default. Deploying needs the Workers Paid plan.
+- Agris is unofficial and not affiliated with Pearl Abyss or Arsha.
+
+## Docs
+
+- [README](https://github.com/Hebilicious/agris/blob/main/README.md): what Agris is, quickstart, configuration table
+- [Deploy guide](https://github.com/Hebilicious/agris/blob/main/docs/deploy.md): deploy to your Cloudflare account, hostnames, rate limiting, every setting, costs
+- [API reference](https://github.com/Hebilicious/agris/blob/main/docs/api.md): requests, persisted queries, errors, limits, caching headers
+- [Architecture](https://github.com/Hebilicious/agris/blob/main/docs/architecture.md): gateway, subgraphs, Pearl Abyss coordination, Service Binding entrypoints
+- [Client schema (SDL)](https://github.com/Hebilicious/agris/blob/main/tools/graph/artifacts/client-schema.graphql): the full public GraphQL schema
+
+## Agents
+
+- [AGENTS.md](https://github.com/Hebilicious/agris/blob/main/AGENTS.md): repository layout, commands and conventions for coding agents
+- [deploy-agris skill](https://github.com/Hebilicious/agris/blob/main/.agents/skills/deploy-agris/SKILL.md): step-by-step self-hosting for an agent acting for a user
+
+## Optional
+
+- [Free plan](https://github.com/Hebilicious/agris/blob/main/docs/free-plan.md): why Agris needs Workers Paid and why the catalog lives in memory
+- [Persisted operations](https://github.com/Hebilicious/agris/blob/main/tools/graph/artifacts/persisted-operations.json): the operation manifest with SHA-256 IDs
+- [Research notes](https://github.com/Hebilicious/agris/tree/main/docs/research): Pearl Abyss endpoints, catalog maintenance, search index design

@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["import", "typescript", "unicorn"],
+  "env": {
+    "browser": true,
+    "node": true
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.artifacts/**",
+    "**/.cloudflare/**",
+    "**/.wrangler/**",
+    "**/.astro/**",
+    "packages/catalog-subgraph/src/generated-catalog-search-artifact.ts",
+    "site/vendor/**"
+  ],
+  "rules": {
+    "no-debugger": "error",
+    "no-duplicate-imports": "error",
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-explicit-any": "error"
+  }
+}

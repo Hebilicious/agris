@@ -1,0 +1,28 @@
+language: "typescript"
+layer: "library"
+stack: "backend"
+
+project:
+  title: "Worker Runtime Adapters"
+  description: "Owns shared typed adapters for Cloudflare Worker runtime capabilities."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Inputs stay inside this project so it works unchanged when the repository is mounted inside another workspace.
+# Upstream packages reach this project's hashes through `^:` dependencies.
+tasks:
+  typecheck:
+    description: "Type-check the worker runtime adapters package."
+    command: "tsc"
+    args: ["-p", "tsconfig.json", "--noEmit"]
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json"]
+
+  build:
+    description: "Compile the worker runtime adapters package for the Node tools that run its output."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:build"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json"]
+    outputs: ["dist/**/*"]

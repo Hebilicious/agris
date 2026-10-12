@@ -1,0 +1,186 @@
+schema @link(url: "https://specs.apollo.dev/link/v1.0") @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION) @link(url: "https://the-guild.dev/graphql/mesh/spec/v1.0", import: ["@merge"]) {
+  query: Query
+}
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+scalar join__FieldSet
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+enum join__Graph {
+  CATALOG @join__graph(name: "catalog", url: "https://central-market-catalog.internal/graphql")
+  MARKET @join__graph(name: "market", url: "https://central-market-market.internal/graphql")
+}
+
+directive @merge(subgraph: String, argsExpr: String, keyArg: String, keyField: String, key: [String!], additionalArgs: String) repeatable on FIELD_DEFINITION
+
+"""An RFC 3339 UTC timestamp."""
+scalar DateTime @join__type(graph: MARKET)
+
+"""
+A non-negative integer that is safe to represent as a JavaScript number.
+"""
+scalar SafeInteger @join__type(graph: MARKET)
+
+type Item @join__type(graph: CATALOG, key: "id locale") @join__type(graph: MARKET, key: "id locale", extension: true) {
+  id: ID!
+  locale: ItemLocale!
+  name: String @join__field(graph: CATALOG)
+  grade: Int @join__field(graph: CATALOG)
+  marketSummary(region: MarketRegion!): MarketItemSummary @join__field(graph: MARKET)
+}
+
+type ItemSearchResult @join__type(graph: CATALOG) {
+  items: [Item!]!
+  totalCount: Int!
+}
+
+type Query @join__type(graph: CATALOG) @join__type(graph: MARKET) {
+  item(id: ID!, locale: ItemLocale! = EN): Item @join__field(graph: CATALOG)
+  items(ids: [ID!]!, locale: ItemLocale! = EN): [Item!]! @join__field(graph: CATALOG)
+  searchItems(query: String!, locale: ItemLocale!, first: Int! = 50): ItemSearchResult! @join__field(graph: CATALOG)
+  market(region: MarketRegion!, locale: ItemLocale! = EN): Market! @merge(subgraph: "market", keyField: "region", keyArg: "region") @merge(subgraph: "market", keyField: "locale", keyArg: "locale") @join__field(graph: MARKET)
+}
+
+type HotMarketItem @join__type(graph: MARKET) {
+  marketItem: MarketItem!
+  direction: PriceDirection!
+  amount: SafeInteger!
+}
+
+type Market @join__type(graph: MARKET, key: "region") @join__type(graph: MARKET, key: "locale") {
+  region: MarketRegion!
+  locale: ItemLocale!
+  observedAt: DateTime!
+  items(ids: [ID!]!): [MarketItem!]
+  catalog(category: MarketCategoryInput): [MarketItem!]
+  hotItems: [HotMarketItem!]
+  registrations: [MarketRegistration!]
+}
+
+type MarketCategory @join__type(graph: MARKET) {
+  main: Int!
+  sub: Int
+}
+
+type MarketItem @join__type(graph: MARKET) {
+  item: Item!
+  isListed: Boolean!
+  category: MarketCategory
+  basePrice: SafeInteger
+  currentStock: SafeInteger
+  totalTrades: SafeInteger
+  listings: [MarketListing!]
+  orderBook(enhancementLevel: Int! = 0): [MarketOrder!]
+  priceHistory(enhancementLevel: Int! = 0): [MarketPricePoint!]
+}
+
+type MarketItemSummary @join__type(graph: MARKET) {
+  region: MarketRegion!
+  observedAt: DateTime!
+  isListed: Boolean!
+  basePrice: SafeInteger
+  currentStock: SafeInteger
+  totalTrades: SafeInteger
+}
+
+type MarketListing @join__type(graph: MARKET) {
+  minimumEnhancementLevel: Int!
+  maximumEnhancementLevel: Int!
+  basePrice: SafeInteger!
+  currentStock: SafeInteger!
+  totalTrades: SafeInteger!
+  minimumPrice: SafeInteger!
+  maximumPrice: SafeInteger!
+  lastSale: MarketSale
+}
+
+type MarketOrder @join__type(graph: MARKET) {
+  price: SafeInteger!
+  sellOrders: SafeInteger!
+  buyOrders: SafeInteger!
+}
+
+type MarketPricePoint @join__type(graph: MARKET) {
+  offsetFromLatest: Int!
+  price: SafeInteger!
+}
+
+type MarketRegistration @join__type(graph: MARKET) {
+  item: Item!
+  enhancementLevel: Int!
+  price: SafeInteger!
+  timestamp: SafeInteger!
+  registeredAt: DateTime!
+}
+
+type MarketSale @join__type(graph: MARKET) {
+  price: SafeInteger!
+  timestamp: SafeInteger!
+  occurredAt: DateTime
+}
+
+enum ItemLocale @join__type(graph: CATALOG) @join__type(graph: MARKET) {
+  EN @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  DE @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  FR @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  ES_EU @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  ES @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  JA @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  KO @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  PT @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  RU @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  TH @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  TR @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+  ZH_TW @join__enumValue(graph: CATALOG) @join__enumValue(graph: MARKET)
+}
+
+enum PriceDirection @join__type(graph: MARKET) {
+  UP @join__enumValue(graph: MARKET)
+  DOWN @join__enumValue(graph: MARKET)
+  UNKNOWN @join__enumValue(graph: MARKET)
+}
+
+enum MarketRegion @join__type(graph: MARKET) {
+  EU @join__enumValue(graph: MARKET)
+  NA @join__enumValue(graph: MARKET)
+  ASIA @join__enumValue(graph: MARKET)
+  MENA @join__enumValue(graph: MARKET)
+  KR @join__enumValue(graph: MARKET)
+  RU @join__enumValue(graph: MARKET)
+  JP @join__enumValue(graph: MARKET)
+  TW @join__enumValue(graph: MARKET)
+  SA @join__enumValue(graph: MARKET)
+  CONSOLE_EU @join__enumValue(graph: MARKET)
+  CONSOLE_NA @join__enumValue(graph: MARKET)
+  CONSOLE_ASIA @join__enumValue(graph: MARKET)
+}
+
+input MarketCategoryInput @join__type(graph: MARKET) {
+  main: Int!
+  sub: Int
+}

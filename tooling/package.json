@@ -1,0 +1,19 @@
+{
+  "name": "@agris/tooling",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./cloudflare-worker-configuration": {
+      "types": "./cloudflare-worker-configuration.ts",
+      "import": "./cloudflare-worker-configuration.ts"
+    }
+  },
+  "dependencies": {
+    "@cloudflare/config": "catalog:",
+    "@types/node": "catalog:",
+    "cf": "catalog:",
+    "typescript": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

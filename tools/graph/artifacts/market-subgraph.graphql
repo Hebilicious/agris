@@ -1,0 +1,138 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@extends", "@key"])
+
+"""An RFC 3339 UTC timestamp."""
+scalar DateTime
+
+type HotMarketItem {
+  marketItem: MarketItem!
+  direction: PriceDirection!
+  amount: SafeInteger!
+}
+
+type Item @key(fields: "id locale") @extends {
+  id: ID!
+  locale: ItemLocale!
+  marketSummary(region: MarketRegion!): MarketItemSummary
+}
+
+enum ItemLocale {
+  EN
+  DE
+  FR
+  ES_EU
+  ES
+  JA
+  KO
+  PT
+  RU
+  TH
+  TR
+  ZH_TW
+}
+
+type Market {
+  region: MarketRegion!
+  locale: ItemLocale!
+  observedAt: DateTime!
+  items(ids: [ID!]!): [MarketItem!]
+  catalog(category: MarketCategoryInput): [MarketItem!]
+  hotItems: [HotMarketItem!]
+  registrations: [MarketRegistration!]
+}
+
+type MarketCategory {
+  main: Int!
+  sub: Int
+}
+
+input MarketCategoryInput {
+  main: Int!
+  sub: Int
+}
+
+type MarketItem {
+  item: Item!
+  isListed: Boolean!
+  category: MarketCategory
+  basePrice: SafeInteger
+  currentStock: SafeInteger
+  totalTrades: SafeInteger
+  listings: [MarketListing!]
+  orderBook(enhancementLevel: Int! = 0): [MarketOrder!]
+  priceHistory(enhancementLevel: Int! = 0): [MarketPricePoint!]
+}
+
+type MarketItemSummary {
+  region: MarketRegion!
+  observedAt: DateTime!
+  isListed: Boolean!
+  basePrice: SafeInteger
+  currentStock: SafeInteger
+  totalTrades: SafeInteger
+}
+
+type MarketListing {
+  minimumEnhancementLevel: Int!
+  maximumEnhancementLevel: Int!
+  basePrice: SafeInteger!
+  currentStock: SafeInteger!
+  totalTrades: SafeInteger!
+  minimumPrice: SafeInteger!
+  maximumPrice: SafeInteger!
+  lastSale: MarketSale
+}
+
+type MarketOrder {
+  price: SafeInteger!
+  sellOrders: SafeInteger!
+  buyOrders: SafeInteger!
+}
+
+type MarketPricePoint {
+  offsetFromLatest: Int!
+  price: SafeInteger!
+}
+
+enum MarketRegion {
+  EU
+  NA
+  ASIA
+  MENA
+  KR
+  RU
+  JP
+  TW
+  SA
+  CONSOLE_EU
+  CONSOLE_NA
+  CONSOLE_ASIA
+}
+
+type MarketRegistration {
+  item: Item!
+  enhancementLevel: Int!
+  price: SafeInteger!
+  timestamp: SafeInteger!
+  registeredAt: DateTime!
+}
+
+type MarketSale {
+  price: SafeInteger!
+  timestamp: SafeInteger!
+  occurredAt: DateTime
+}
+
+enum PriceDirection {
+  UP
+  DOWN
+  UNKNOWN
+}
+
+type Query {
+  market(region: MarketRegion!, locale: ItemLocale! = EN): Market!
+}
+
+"""
+A non-negative integer that is safe to represent as a JavaScript number.
+"""
+scalar SafeInteger

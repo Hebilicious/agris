@@ -1,0 +1,125 @@
+language: "typescript"
+layer: "application"
+stack: "backend"
+
+project:
+  title: "Agris"
+  description: "A deployable GraphQL proxy over the Black Desert Online Central Market."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Repository-wide operations and the aggregates that name every project's task. Each project's own moon.yml holds the
+# work itself.
+tasks:
+  lint:
+    description: "Lint every TypeScript file with oxlint."
+    command: "oxlint"
+    args: ["--deny-warnings", "."]
+    inputs: ["**/*.ts", ".oxlintrc.json", "!**/node_modules/**", "!**/dist/**"]
+
+  format:
+    description: "Format the repository with oxfmt."
+    command: "oxfmt"
+    args: ["--write", "."]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  format-check:
+    description: "Check that the repository is formatted with oxfmt."
+    command: "oxfmt"
+    args: ["--check", "."]
+    inputs: ["**/*", "!**/node_modules/**", "!**/dist/**", "!.moon/cache/**", "!**/.artifacts/**"]
+
+  typecheck:
+    description: "Type-check every project."
+    command: "noop"
+    deps:
+      - "core:typecheck"
+      - "catalog-subgraph:typecheck"
+      - "market-subgraph:typecheck"
+      - "pearl-abyss:typecheck"
+      - "invocation-budget:typecheck"
+      - "worker-runtime:typecheck"
+      - "gateway:typecheck"
+      - "market-worker:typecheck"
+      - "catalog-worker:typecheck"
+      - "graph:typecheck"
+      - "catalog-tools:typecheck"
+      - "smoke:typecheck"
+      - "tooling:typecheck"
+      - "tests:typecheck"
+      - "tests:workers-typecheck"
+      - "tests:catalog-worker-typecheck"
+      - "site:typecheck"
+
+  test:
+    description: "Run every local test suite and artifact check."
+    command: "noop"
+    deps:
+      - "tests:test"
+      - "graph:check"
+      - "graph:generated-check"
+      - "catalog-tools:validate"
+      - "catalog-tools:search-artifact-check"
+      - "site:figure-audit"
+
+  dry-run:
+    description: "Bundle every Worker's production mode with `cf` without uploading it."
+    command: "noop"
+    deps: ["market-worker:dry-run", "catalog-worker:dry-run", "gateway:dry-run"]
+    options:
+      cache: false
+
+  demo-dry-run:
+    description: "Bundle every Worker's hosted-demo mode, and the demo gateway's built site, with `cf` without uploading them."
+    command: "noop"
+    deps: ["market-worker:demo-dry-run", "catalog-worker:demo-dry-run", "gateway:demo-dry-run"]
+    options:
+      cache: false
+
+  check:
+    description: "Everything a change must pass: formatting, lint, type checks, tests, generated-artifact checks, the site build and Worker bundles in their production and demo modes."
+    command: "noop"
+    deps: ["format-check", "lint", "typecheck", "test", "site:build", "dry-run", "demo-dry-run"]
+
+  generate:
+    description: "Regenerate the committed graph artifacts and catalog search artifact from source."
+    command: "noop"
+    deps: ["graph:generate", "catalog-tools:generate"]
+    options:
+      cache: false
+
+  dev:
+    description: "Run the local gateway on port 8790 with the local market Worker on port 8791; the gateway serves the catalog inline."
+    command: "noop"
+    deps: ["market-worker:dev", "gateway:dev"]
+    preset: "server"
+
+  deploy:
+    description: "Deploy the market, catalog and gateway Workers in their production modes."
+    tags: ["external-mutation"]
+    command: "noop"
+    deps: ["gateway:deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  demo-deploy:
+    description: "Deploy the hosted demo: the market, catalog and gateway Workers in their demo modes, with the static site."
+    tags: ["external-mutation"]
+    command: "noop"
+    deps: ["gateway:demo-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  staging-deploy:
+    description: "Deploy the market, catalog and gateway Workers in their staging modes."
+    tags: ["external-mutation"]
+    command: "noop"
+    deps: ["gateway:staging-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"

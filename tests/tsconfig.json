@@ -1,0 +1,32 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "features/**/*.ts",
+    "support/**/*.ts",
+    "../packages/catalog-subgraph/src/**/*.ts",
+    "../packages/core/src/**/*.ts",
+    "../packages/market-subgraph/src/**/*.ts",
+    "test-parallelism.ts",
+    "vitest.headless.config.ts",
+    "vitest.integration.config.ts",
+    "vitest.publication.config.ts"
+  ],
+  "exclude": [
+    "features/catalog-worker-entrypoint-env.d.ts",
+    "features/catalog-worker-entrypoint.manifest.ts",
+    "features/catalog-worker-entrypoint.test-worker.ts",
+    "features/catalog-worker-entrypoint.worker-runtime.test.ts",
+    "features/worker-entrypoints.manifest.ts",
+    "features/worker-entrypoints.worker-runtime.test.ts",
+    "features/public-gateway.manifest.ts",
+    "features/public-gateway.worker-runtime.test.ts"
+  ]
+}

@@ -1,0 +1,82 @@
+packages:
+  - "packages/*"
+  - "workers/*"
+  - "tools/*"
+  - "tests"
+  - "tooling"
+  - "site"
+
+allowBuilds:
+  "@apollo/protobufjs@1.2.8": true
+  esbuild@0.28.1: true
+  sharp@0.35.5: true
+  workerd@1.20260815.1: true
+  workerd@1.20260820.1: true
+  workerd@1.20260926.1: true
+
+overrides:
+  # The Workers test pool runs against the same Miniflare release the rest of the toolchain uses.
+  "@cloudflare/vitest-pool-workers>miniflare": 5.20260820.0-alpha
+  # 0.35.5 carries the fix for GHSA-wq5f-xc86-pv6w, which arrives through wrangler, cf and miniflare.
+  sharp: 0.35.5
+  # 7.29.1 carries the fix for GHSA-3wwx-pv8p-q78v; miniflare pins the vulnerable 7.29.0 exactly.
+  "miniflare>undici": 7.29.1
+  # 2.1.7 and 5.0.12 carry the fixes for GHSA-6j4f-fj2g-mc7p and GHSA-q2hr-2g5m-vwhr.
+  "brace-expansion@2": 2.1.7
+  "brace-expansion@5": 5.0.12
+  # 2.1.2 carries the fixes for GHSA-5gmw-xhrv-c9v3 and GHSA-85c8-ppgw-ccpr; oxfmt pins 2.1.0 exactly.
+  "oxfmt>tinypool": 2.1.2
+  # 12.0.1 is the first release with the fix for GHSA-7mx3-vvmw-hjmv; the gateway runtime's other
+  # dependencies still ask for ^10 or ^11, and 12.0.3 exports everything they use.
+  "@graphql-tools/utils@<12.0.1": 12.0.3
+
+minimumReleaseAgeExclude:
+  - "@cloudflare/vite-plugin@2.0.0-beta.sha-ad79608dd"
+  - "@cloudflare/workers-types@5.20260828.1"
+  - wrangler@4.143.0
+  - "@cloudflare/workerd-darwin-64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-darwin-arm64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-linux-64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-linux-arm64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-windows-64@1.20260824.1 || 1.20260828.1"
+  - workerd@1.20260824.1 || 1.20260828.1
+  - cf@1.0.0-beta.5
+  - xstate@6.0.0-alpha.61
+
+# The one version of every external package. Each package.json names it with `catalog:`.
+catalogMode: strict
+catalog:
+  "@apollo/subgraph": "2.14.4"
+  "@cloudflare/config": "0.20.0"
+  "@cloudflare/vite-plugin": "2.0.0-beta.sha-ad79608dd"
+  "@cloudflare/vitest-pool-workers": "0.22.0"
+  "@cloudflare/workers-types": "5.20260828.1"
+  "@cucumber/cucumber-expressions": "^20.1.0"
+  "@cucumber/gherkin": "^42.0.1"
+  "@cucumber/messages": "^34.2.1"
+  "@cucumber/tag-expressions": "^11.0.1"
+  "@graphql-hive/gateway-runtime": "2.12.1"
+  "@graphql-mesh/compose-cli": "1.8.1"
+  "@graphql-mesh/transport-http": "1.2.1"
+  "@pothos/core": "4.13.1"
+  "@pothos/plugin-dataloader": "4.4.5"
+  "@pothos/plugin-directives": "4.3.1"
+  "@pothos/plugin-federation": "4.5.0"
+  "@types/node": "^24.0.0"
+  "@types/ws": "8.18.1"
+  astro: "7.3.8"
+  cf: "1.0.0-beta.5"
+  effect: "4.0.0-rc.118"
+  fast-check: "^4.9.0"
+  graphql: "16.14.2"
+  graphql-yoga: "5.22.0"
+  miniflare: "5.20260820.0-alpha"
+  oxfmt: "0.62.0"
+  oxlint: "1.80.0"
+  typescript: "7.0.2"
+  valibot: "1.4.2"
+  vite: "^8.1.4"
+  vitest: "^4.1.10"
+  wrangler: "4.143.0"
+  ws: "8.21.0"
+  xstate: "6.0.0-alpha.61"

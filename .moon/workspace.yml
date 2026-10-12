@@ -1,0 +1,42 @@
+projects:
+  agris: "."
+  core: "packages/core"
+  catalog-subgraph: "packages/catalog-subgraph"
+  market-subgraph: "packages/market-subgraph"
+  pearl-abyss: "packages/pearl-abyss"
+  invocation-budget: "packages/invocation-budget"
+  worker-runtime: "packages/worker-runtime"
+  gateway: "workers/gateway"
+  market-worker: "workers/market"
+  catalog-worker: "workers/catalog"
+  graph: "tools/graph"
+  catalog-tools: "tools/catalog"
+  smoke: "tools/smoke"
+  tests: "tests"
+  tooling: "tooling"
+  site: "site"
+
+defaultProject: "agris"
+telemetry: false
+versionConstraint: ">=2.5.3 <2.6.0"
+
+vcs:
+  defaultBranch: "main"
+
+hasher:
+  walkStrategy: "glob"
+  ignorePatterns:
+    - "node_modules/**"
+    - "**/node_modules/**"
+    - ".artifacts/**"
+    - "**/.artifacts/**"
+    - "**/.cloudflare/**"
+    - "**/.wrangler/**"
+    - "dist/**"
+    - ".pnpm-store/**"
+    - ".proto/**"
+    - ".worktrees/**"
+
+pipeline:
+  installDependencies:
+    - "javascript"

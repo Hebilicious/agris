@@ -1,0 +1,30 @@
+{
+  "name": "@agris/catalog-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agris/catalog-subgraph": "workspace:*",
+    "@agris/pearl-abyss": "workspace:*",
+    "@agris/tooling": "workspace:*",
+    "@apollo/subgraph": "catalog:",
+    "@cloudflare/config": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
+    "@pothos/core": "catalog:",
+    "@pothos/plugin-directives": "catalog:",
+    "@pothos/plugin-federation": "catalog:",
+    "@types/node": "catalog:",
+    "@types/ws": "catalog:",
+    "cf": "catalog:",
+    "effect": "catalog:",
+    "graphql": "catalog:",
+    "graphql-yoga": "catalog:",
+    "miniflare": "catalog:",
+    "typescript": "catalog:",
+    "valibot": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:",
+    "ws": "catalog:",
+    "xstate": "catalog:"
+  }
+}

@@ -1,0 +1,93 @@
+language: "typescript"
+layer: "automation"
+stack: "backend"
+
+project:
+  title: "Agris Tests"
+  description: "Executable Gherkin evidence for the Agris graph, its packages and its Workers."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# The evidence imports the packages and Workers it proves, and the item-name search evidence imports the catalog
+# subgraph's compiled output, so every task depends on the upstream builds and type checks.
+tasks:
+  typecheck:
+    description: "Type-check the headless and integration evidence."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:build", "^:typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "tsconfig.json", "package.json"]
+
+  workers-typecheck:
+    description: "Type-check the gateway and market Worker runtime evidence."
+    command: "tsc"
+    args: ["-p", "tsconfig.workers.json"]
+    deps: ["^:typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "tsconfig.workers.json", "package.json"]
+
+  catalog-worker-typecheck:
+    description: "Type-check the catalog Worker runtime evidence."
+    command: "tsc"
+    args: ["-p", "tsconfig.catalog-worker.json"]
+    deps: ["^:typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "tsconfig.catalog-worker.json", "package.json"]
+
+  test-headless:
+    description: "Run the headless Feature evidence: market semantics, Pearl Abyss transport, request safety and catalog search."
+    command: "vitest"
+    args: ["run", "--config", "vitest.headless.config.ts"]
+    deps: ["typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json"]
+
+  test-integration:
+    description: "Run the federated graph's Node integration Feature evidence."
+    command: "vitest"
+    args: ["run", "--config", "vitest.integration.config.ts"]
+    deps: ["typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json"]
+
+  workers-bundle:
+    description: "Bundle the real market Worker entrypoint the gateway runtime evidence binds."
+    command: "vite"
+    args: ["build", "--config", "vite.workers.config.ts"]
+    deps: ["^:typecheck"]
+    inputs: ["vite.workers.config.ts", "package.json"]
+    outputs: [".artifacts/market-worker-runtime/**/*"]
+    options:
+      cache: false
+
+  test-workers:
+    description: "Run the real gateway and market entrypoints together in the Cloudflare Workers runtime."
+    command: "vitest"
+    args: ["run", "--config", "vitest.workers.config.ts"]
+    deps: ["workers-typecheck", "workers-bundle"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json"]
+    options:
+      cache: false
+      mutex: "workers-runtime"
+
+  catalog-worker-bundle:
+    description: "Bundle the production catalog Worker entrypoint for its isolated runtime evidence."
+    command: "vite"
+    args: ["build", "--config", "vite.catalog-worker.config.ts"]
+    deps: ["^:typecheck"]
+    inputs: ["vite.catalog-worker.config.ts", "package.json"]
+    outputs: [".artifacts/catalog-worker-runtime/**/*"]
+    options:
+      cache: false
+
+  test-catalog-worker:
+    description: "Run the production catalog Worker entrypoint against its bundled immutable artifact."
+    command: "vitest"
+    args: ["run", "--config", "vitest.catalog-worker.config.ts"]
+    deps: ["catalog-worker-typecheck", "catalog-worker-bundle"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json"]
+    options:
+      cache: false
+      mutex: "workers-runtime"
+
+  test:
+    description: "Run every local test suite: headless, integration and Workers runtime evidence."
+    command: "noop"
+    deps: ["test-headless", "test-integration", "test-workers", "test-catalog-worker"]

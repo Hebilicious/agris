@@ -1,0 +1,71 @@
+---
+import "../../vendor/anatomy/iso.css";
+import "../styles/global.css";
+import "../styles/figure.css";
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const repository = "https://github.com/Hebilicious/agris";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f2f2ef" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0b0b" media="(prefers-color-scheme: dark)" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
+  </head>
+  <body class="iso">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="/" aria-label="Agris home">
+          <img src="/favicon.svg" alt="" width="20" height="20" />
+          <span>Agris</span>
+        </a>
+        <nav aria-label="Sections">
+          <ul class="nav-list">
+            <li><a href="#design">Design</a></li>
+            <li><a href="#queries">Queries</a></li>
+            <li><a href="#deploy">Deploy</a></li>
+            <li><a href={repository}>GitHub</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <p>
+          Agris is an unofficial community project. It is not affiliated with, endorsed by, or sponsored by Pearl Abyss
+          or Arsha. Black Desert and Black Desert Online are trademarks of Pearl Abyss. Provided as is, under the MIT
+          license.
+        </p>
+        <p>
+          Fig 1 is drawn with <a href="https://github.com/wheresryan22/anatomy">anatomy</a> by Ryan, MIT licensed.
+        </p>
+        <p class="footer-links">
+          <a href={repository}>Source on GitHub</a>
+          <a href={`${repository}/blob/main/docs/api.md`}>API reference</a>
+          <a href={`${repository}/blob/main/docs/deploy.md`}>Deploy guide</a>
+          <a href="/llms.txt">llms.txt</a>
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

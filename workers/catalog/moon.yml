@@ -1,0 +1,88 @@
+language: "typescript"
+layer: "application"
+stack: "backend"
+
+project:
+  title: "Agris catalog Worker"
+  description: "The Agris catalog subgraph Worker serving an immutable in-memory catalog."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Inputs stay inside this project so it works unchanged when the repository is mounted inside another workspace.
+# Upstream packages reach this project's hashes through `^:` dependencies. Deploy modes are the modes
+# `cloudflare.config.ts` defines; `cf` deploys to the account the deployer's credentials select.
+tasks:
+  typecheck:
+    description: "Type-check the Agris catalog Worker and prove its configuration provides the bindings it reads."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "cloudflare.config.ts", "wrangler.config.ts"]
+
+  dry-run:
+    description: "Bundle the production Agris catalog Worker with `cf` without uploading it."
+    command: "cf"
+    args: ["deploy", "--dry-run", "--mode", "production"]
+    deps: ["typecheck"]
+    inputs: ["src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "cloudflare.config.ts", "wrangler.config.ts"]
+    options:
+      cache: false
+      mutex: "catalog-cloudflare-output"
+
+  dev:
+    description: "Run the Agris catalog Worker locally in its local mode on port 8792."
+    command: "cf"
+    args: ["dev", "--mode", "local", "--port", "8792"]
+    preset: "server"
+
+  deploy:
+    description: "Deploy the Agris catalog Worker in its production mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "production"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "catalog-cloudflare-output"
+
+  staging-deploy:
+    description: "Deploy the Agris catalog Worker in its staging mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "staging"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "catalog-cloudflare-output"
+
+  release-bundle:
+    description: "Bundle the production catalog Worker and keep the bundle for the catalog release diagnostic."
+    command: "node"
+    args: ["../../tooling/cloudflare-bundle-retain.ts", "production", "../../.artifacts/catalog-release/catalog-upload"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      mutex: "catalog-cloudflare-output"
+
+  demo-dry-run:
+    description: "Bundle the hosted-demo Agris catalog Worker with `cf` without uploading it."
+    command: "cf"
+    args: ["deploy", "--dry-run", "--mode", "demo"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      mutex: "catalog-cloudflare-output"
+
+  demo-deploy:
+    description: "Deploy the Agris catalog Worker in its hosted-demo mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "demo"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "catalog-cloudflare-output"

@@ -1,0 +1,51 @@
+language: "typescript"
+layer: "tool"
+stack: "backend"
+
+project:
+  title: "Agris Smoke"
+  description: "Calls a deployed private Agris gateway through a local caller with a remote Service Binding."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+tasks:
+  typecheck:
+    description: "Type-check the smoke caller."
+    command: "tsc"
+    args: ["-p", "tsconfig.json", "--noEmit"]
+    inputs: ["caller/src/**/*.ts", "worker-env.d.ts", "cloudflare.config.ts", "wrangler.config.ts", "tsconfig.json", "package.json"]
+
+  dev-staging:
+    description: "Run a disposable local caller bound remotely to the staging Agris gateway."
+    command: "cf"
+    args: ["dev", "--mode", "staging-remote", "--port", "39411"]
+    deps: ["typecheck"]
+    preset: "server"
+
+  dev-smoke-remote:
+    description: "Run a disposable local caller bound remotely to the cache-smoke Agris gateway; pass the port after --."
+    command: "cf"
+    args: ["dev", "--mode", "remote"]
+    deps: ["typecheck"]
+    preset: "server"
+
+  smoke:
+    description: "Deploy the cache-smoke gateway, then prove its MISS, HIT and stale-on-503 behaviour through the Service Binding."
+    tags: ["external-mutation"]
+    command: "vitest"
+    args: ["run", "--root", "../../tests", "--config", "../../tests/vitest.publication.config.ts"]
+    deps: ["typecheck", "gateway:smoke-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  verify-deployed:
+    description: "Verify the already-deployed cache-smoke gateway without changing Cloudflare state."
+    tags: ["external-state"]
+    command: "vitest"
+    args: ["run", "--root", "../../tests", "--config", "../../tests/vitest.publication.config.ts"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"

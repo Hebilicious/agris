@@ -1,0 +1,90 @@
+language: "typescript"
+layer: "application"
+stack: "backend"
+
+project:
+  title: "Agris gateway Worker"
+  description: "The Agris gateway Worker: uncached caller and cached internal entrypoints over the federated graph."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Inputs stay inside this project so it works unchanged when the repository is mounted inside another workspace.
+# Upstream packages reach this project's hashes through `^:` dependencies. Deploy modes are the modes
+# `cloudflare.config.ts` defines; `cf` deploys to the account the deployer's credentials select.
+tasks:
+  typecheck:
+    description: "Type-check the Agris gateway Worker and prove its configuration provides the bindings it reads."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "cloudflare.config.ts", "config-env.check.ts", "wrangler.config.ts"]
+
+  dry-run:
+    description: "Bundle the production Agris gateway Worker with `cf` without uploading it."
+    command: "cf"
+    args: ["deploy", "--dry-run", "--mode", "production"]
+    deps: ["typecheck"]
+    inputs: ["src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "cloudflare.config.ts", "config-env.check.ts", "wrangler.config.ts"]
+    options:
+      cache: false
+      mutex: "gateway-cloudflare-output"
+
+  dev:
+    description: "Run the Agris gateway Worker locally in its local mode on port 8790."
+    command: "cf"
+    args: ["dev", "--mode", "local", "--port", "8790"]
+    preset: "server"
+
+  deploy:
+    description: "Deploy the Agris gateway Worker in its production mode, after the subgraph Workers it binds."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "production"]
+    deps: ["typecheck", "market-worker:deploy", "catalog-worker:deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "gateway-cloudflare-output"
+
+  staging-deploy:
+    description: "Deploy the Agris gateway Worker in its staging mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "staging"]
+    deps: ["typecheck", "market-worker:staging-deploy", "catalog-worker:staging-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "gateway-cloudflare-output"
+
+  smoke-deploy:
+    description: "Deploy the Agris gateway Worker in its smoke mode."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "smoke"]
+    deps: ["typecheck", "staging-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "gateway-cloudflare-output"
+
+  demo-dry-run:
+    description: "Bundle the hosted-demo Agris gateway Worker and the built site (`site/dist`) with `cf` without uploading them."
+    command: "cf"
+    args: ["deploy", "--dry-run", "--mode", "demo"]
+    deps: ["typecheck", "site:build"]
+    options:
+      cache: false
+      mutex: "gateway-cloudflare-output"
+
+  demo-deploy:
+    description: "Deploy the hosted-demo Agris gateway Worker and its static site, after the demo subgraph Workers it binds."
+    tags: ["external-mutation"]
+    command: "cf"
+    args: ["deploy", "--mode", "demo"]
+    deps: ["typecheck", "site:build", "market-worker:demo-deploy", "catalog-worker:demo-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+      mutex: "gateway-cloudflare-output"

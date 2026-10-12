@@ -1,0 +1,541 @@
+/*
+ * The page shares the figure's palette: the anatomy kit's paper, ink and four shades, light first, dark when the
+ * reader's system asks for it (the tokens live on `.iso`, which the body carries). One ink, no accent colour: the
+ * figure's lit part is the only thing that stands out.
+ */
+:root {
+  color-scheme: light dark;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --measure: 68ch;
+  --rule: var(--anatomy-faint);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 4.5rem;
+}
+
+body {
+  margin: 0;
+  background: var(--anatomy-page);
+  color: var(--anatomy-text);
+  font: 15px/1.65 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--anatomy-strong);
+  text-decoration-color: var(--anatomy-lo);
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  text-decoration-color: var(--anatomy-strong);
+}
+
+:focus-visible {
+  outline: 1px solid var(--anatomy-strong);
+  outline-offset: 3px;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  color: var(--anatomy-strong);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+h1 {
+  max-width: 22ch;
+  font-size: clamp(2rem, 1.35rem + 2.6vw, 3.35rem);
+  letter-spacing: -0.03em;
+}
+
+h2 {
+  font-size: clamp(1.5rem, 1.2rem + 1.1vw, 2.1rem);
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+p {
+  margin: 0;
+}
+
+code {
+  font: 0.86em/1.4 var(--mono);
+  color: var(--anatomy-strong);
+}
+
+.wrap {
+  width: min(72rem, 100% - 2.5rem);
+  margin-inline: auto;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--anatomy-card);
+  color: var(--anatomy-strong);
+  z-index: 10;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* Header and footer */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: color-mix(in srgb, var(--anatomy-page) 86%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: 3.25rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--anatomy-strong);
+  font: 600 0.95rem/1 var(--mono);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.brand img {
+  filter: grayscale(1) contrast(1.4);
+}
+
+.nav-list {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 0.8rem/1 var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.nav-list a {
+  color: var(--anatomy-text);
+  text-decoration: none;
+}
+
+.nav-list a:hover {
+  color: var(--anatomy-strong);
+}
+
+.site-footer {
+  padding: 2.5rem 0 3.5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--anatomy-muted);
+  font-size: 0.85rem;
+}
+
+.site-footer p + p {
+  margin-top: 0.6rem;
+}
+
+.site-footer a {
+  color: var(--anatomy-text);
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+/* Sections */
+
+section {
+  padding: 4.5rem 0;
+}
+
+section.alt {
+  background: var(--anatomy-card);
+  border-block: 1px solid var(--rule);
+}
+
+.eyebrow {
+  margin-bottom: 0.85rem;
+  color: var(--anatomy-muted);
+  font: 0.72rem/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.lede,
+.section-lede {
+  max-width: var(--measure);
+  margin-top: 1rem;
+  font-size: 1.05rem;
+}
+
+.section-lede {
+  font-size: 0.98rem;
+}
+
+.note {
+  margin-top: 0.75rem;
+  color: var(--anatomy-muted);
+  font-size: 0.86rem;
+}
+
+/* Hero */
+
+.hero {
+  padding: 3.5rem 0 2rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1.75rem 0 0.5rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.62rem 1rem;
+  border: 0;
+  border-radius: 7px;
+  background: var(--anatomy-card);
+  box-shadow: 0 0 0 1px var(--anatomy-lo);
+  color: var(--anatomy-strong);
+  font: 500 0.88rem/1.1 var(--sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition: box-shadow 160ms var(--anatomy-ease);
+}
+
+.button:hover {
+  box-shadow: 0 0 0 1px var(--anatomy-strong);
+}
+
+.button.primary {
+  background: var(--anatomy-strong);
+  box-shadow: 0 0 0 1px var(--anatomy-strong);
+  color: var(--anatomy-page);
+}
+
+.button.small {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.hero .iso-figure {
+  margin: 2.25rem 0 0;
+}
+
+/* Design decisions */
+
+.decisions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
+  gap: 1px;
+  margin: 2.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--rule);
+  box-shadow: 0 0 0 1px var(--rule);
+}
+
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.35rem 1.35rem 1.2rem;
+  background: var(--anatomy-page);
+}
+
+.decision-part {
+  display: flex;
+  gap: 0.6rem;
+  color: var(--anatomy-muted);
+  font: 0.7rem/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.decision-part span {
+  color: var(--anatomy-strong);
+}
+
+.decision p {
+  font-size: 0.92rem;
+}
+
+.decision-source {
+  margin-top: auto;
+  padding-top: 0.4rem;
+  color: var(--anatomy-muted);
+  font: 0.7rem/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.windows,
+.limits {
+  margin-top: 2.75rem;
+}
+
+.windows h3,
+.limits h3 {
+  margin-bottom: 0.9rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+th,
+td {
+  padding: 0.6rem 0.75rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+thead th {
+  color: var(--anatomy-muted);
+  font: 500 0.7rem/1.2 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+tbody th {
+  font-weight: 500;
+  color: var(--anatomy-strong);
+}
+
+td code {
+  display: inline-block;
+  margin: 0 0.6rem 0.2rem 0;
+}
+
+/* Examples */
+
+.examples {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 32rem), 1fr));
+  gap: 1.25rem;
+  margin-top: 2.25rem;
+}
+
+.example {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 1.25rem;
+  background: var(--anatomy-page);
+  box-shadow: 0 0 0 1px var(--rule);
+  border-radius: 10px;
+}
+
+.example header p {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.example-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 1rem;
+  margin: 0;
+  font: 0.74rem/1.35 var(--mono);
+}
+
+.example-meta div {
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.example-meta dt {
+  flex: none;
+  width: 5.2rem;
+  color: var(--anatomy-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.example-meta dd {
+  margin: 0;
+  color: var(--anatomy-strong);
+  overflow-wrap: anywhere;
+}
+
+.example-meta code {
+  font-size: inherit;
+}
+
+.example-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+/* Code */
+
+.snippet {
+  margin: 0;
+  min-width: 0;
+  border-radius: 8px;
+  background: var(--anatomy-card);
+  box-shadow: 0 0 0 1px var(--rule);
+  overflow: hidden;
+}
+
+.snippet figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.5rem 0.4rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--anatomy-muted);
+  font: 0.7rem/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.copy {
+  padding: 0.3rem 0.55rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--anatomy-text);
+  font: 0.72rem/1 var(--mono);
+  cursor: pointer;
+}
+
+.copy:hover {
+  background: var(--anatomy-shade-3);
+  color: var(--anatomy-strong);
+}
+
+.snippet pre {
+  margin: 0;
+  padding: 0.85rem 0.95rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  overflow-x: auto;
+  background: transparent !important;
+}
+
+/* Shiki writes both themes as CSS variables; pick one per colour scheme. */
+.astro-code,
+.astro-code span {
+  color: var(--shiki-light) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .astro-code,
+  .astro-code span {
+    color: var(--shiki-dark) !important;
+  }
+}
+
+/* Deploy */
+
+.deploy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 2rem;
+  margin-top: 2.25rem;
+}
+
+.deploy-grid > div > p {
+  margin-top: 0.9rem;
+  font-size: 0.92rem;
+}
+
+.deploy-notes h3 + p {
+  margin-top: 0.4rem;
+}
+
+.deploy-notes p + h3 {
+  margin-top: 1.4rem;
+}
+
+.links {
+  margin: 1.2rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.links li + li {
+  margin-top: 0.35rem;
+}
+
+.credits p {
+  max-width: var(--measure);
+  margin-top: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  section {
+    padding: 3.25rem 0;
+  }
+
+  .hero {
+    padding-top: 2.25rem;
+  }
+
+  .nav-list {
+    gap: 0.85rem;
+  }
+
+  .nav-list li:last-child {
+    display: none;
+  }
+
+  .wrap {
+    width: min(72rem, 100% - 1.5rem);
+  }
+
+  .example-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

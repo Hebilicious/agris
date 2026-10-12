@@ -1,0 +1,77 @@
+language: "typescript"
+layer: "tool"
+stack: "backend"
+
+project:
+  title: "Agris Catalog Tools"
+  description: "Validate the shipped item catalog and generate the catalog subgraph's search artifact from it."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+tasks:
+  typecheck:
+    description: "Type-check the catalog tools and the Worker that bundles the generated search artifact."
+    command: "tsc"
+    args: ["-p", "tsconfig.json", "--noEmit"]
+    deps: ["^:build", "artifact-worker-typecheck"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json"]
+
+  build:
+    description: "Compile the catalog tools."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:build"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json"]
+    outputs: ["dist/**/*"]
+
+  validate:
+    description: "Validate catalog order, required fields, count and checksum before publication."
+    command: "node"
+    args: ["dist/validate.js"]
+    deps: ["build"]
+    inputs: ["dist/**/*.js", "data/**/*"]
+
+  generate:
+    description: "Generate the all-locale catalog and compact item-name search artifact into the catalog subgraph."
+    command: "node"
+    args: ["dist/generate-search-artifact.js"]
+    deps: ["build", "validate"]
+    inputs: ["dist/**/*.js", "data/**/*"]
+    options:
+      cache: false
+
+  search-artifact-check:
+    description: "Verify the committed search artifact's determinism, checksums, alignment and compact-index invariants."
+    command: "vitest"
+    args: ["run", "src/search-artifact.test.ts", "--config", "vitest.config.ts"]
+    deps: ["build", "validate"]
+    inputs: ["src/**/*.ts", "vitest.config.ts", "data/**/*", "package.json"]
+
+  artifact-worker-typecheck:
+    description: "Type-check the generated catalog artifact through a Worker-compatible consumer."
+    command: "tsc"
+    args: ["-p", "artifact-dry-run/tsconfig.json"]
+    deps: ["^:build"]
+    inputs: ["artifact-dry-run/**/*.ts", "artifact-dry-run/tsconfig.json", "package.json"]
+
+  artifact-worker-build:
+    description: "Bundle the generated catalog search Worker and keep the bundle for the release diagnostic."
+    command: "node"
+    args: ["../../tooling/cloudflare-bundle-retain.ts", "artifact", "../../.artifacts/catalog-release/search-upload"]
+    deps: ["artifact-worker-typecheck"]
+    inputs: ["artifact-dry-run/artifact-worker.ts", "cloudflare.config.ts", "package.json"]
+    options:
+      cache: false
+      mutex: "catalog-tools-cloudflare-output"
+
+  release-diagnostic:
+    description: "Measure the catalog Worker's startup, retained isolate memory, compressed upload and exact-search p95 in workerd."
+    tags: ["external-state"]
+    command: "node"
+    args: ["dist/release-diagnostic.js"]
+    deps: ["build", "artifact-worker-build", "catalog-worker:release-bundle"]
+    inputs: ["dist/release-diagnostic.js", "artifact-dry-run/artifact-worker.ts", "cloudflare.config.ts"]
+    options:
+      cache: false
+      runInCI: "skip"

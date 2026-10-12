@@ -1,0 +1,46 @@
+language: "typescript"
+layer: "application"
+stack: "frontend"
+
+project:
+  title: "Agris site"
+  description: "The Agris website and llms.txt: an Astro static site the demo gateway serves as assets."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Inputs are relative to this project so it works unchanged when the repository is mounted inside another workspace.
+# The build runs every example query through `@agris/core`'s public protocol against the committed client schema, so
+# core reaches the hash through `^:typecheck`. Moon refuses `..` inputs, so a change to the committed client schema alone
+# does not by itself invalidate a cached site build; rebuild with `moon run site:build -u` after regenerating it.
+tasks:
+  typecheck:
+    description: "Type-check the site's TypeScript: the figure model, timeline, art and live script, and the vendored kit."
+    script: "astro sync && tsc -p tsconfig.json --noEmit"
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*", "vendor/**/*", "astro.config.ts", "tsconfig.json", "package.json"]
+
+  figure-audit:
+    description: "Prove Fig 1's line to Pearl Abyss with the anatomy audit: clearance, mounts, support, depth order."
+    script: "node src/figure/figure-audit.ts"
+    inputs: ["src/figure/**/*", "vendor/**/*", "package.json"]
+
+  build:
+    description: "Build the static site into `site/dist`, failing if an example query is refused by the public gateway."
+    command: "astro"
+    args: ["build"]
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*", "vendor/**/*", "public/**/*", "astro.config.ts", "tsconfig.json", "package.json"]
+    outputs: ["dist"]
+
+  dev:
+    description: "Serve the site locally with live reload on port 4321."
+    command: "astro"
+    args: ["dev", "--port", "4321"]
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    preset: "server"

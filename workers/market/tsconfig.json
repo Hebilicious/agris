@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.workers.json",
+  "include": ["src/**/*.ts", "worker-env.d.ts", "config-env.check.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

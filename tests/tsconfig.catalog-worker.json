@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.workers.json",
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types", "node", "vitest/globals"]
+  },
+  "include": [
+    "features/catalog-worker-entrypoint-env.d.ts",
+    "features/catalog-worker-entrypoint.manifest.ts",
+    "features/catalog-worker-entrypoint.test-worker.ts",
+    "features/catalog-worker-entrypoint.worker-runtime.test.ts",
+    "../workers/catalog/src/index.ts",
+    "../workers/raw-import.d.ts",
+    "vite.catalog-worker.config.ts",
+    "vitest.catalog-worker.config.ts"
+  ]
+}

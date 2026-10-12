@@ -1,0 +1,16 @@
+{
+  "name": "@agris/graph-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agris/catalog-subgraph": "workspace:*",
+    "@agris/core": "workspace:*",
+    "@agris/market-subgraph": "workspace:*",
+    "@graphql-mesh/compose-cli": "catalog:",
+    "@types/node": "catalog:",
+    "graphql": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

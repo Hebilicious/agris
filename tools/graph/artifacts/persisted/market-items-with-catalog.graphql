@@ -1,0 +1,19 @@
+query MarketItemsWithCatalog($region: MarketRegion!, $ids: [ID!]!, $locale: ItemLocale = EN) {
+  market(region: $region, locale: $locale) {
+    region
+    locale
+    observedAt
+    items(ids: $ids) {
+      item {
+        id
+        locale
+        name
+        grade
+      }
+      isListed
+      basePrice
+      currentStock
+      totalTrades
+    }
+  }
+}

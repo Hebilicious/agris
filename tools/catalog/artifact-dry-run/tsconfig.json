@@ -1,0 +1,4 @@
+{
+  "extends": "../../../tsconfig.workers.json",
+  "include": ["artifact-worker.ts"]
+}

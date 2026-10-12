@@ -1,0 +1,92 @@
+---
+// Fig 1, "The Agris exchange": the request path drawn as a counting-house machine. The art is built here, at build
+// time, from `src/figure/art.ts`; the script below moves it in the browser. Every window it shows comes from the
+// gateway's own cache policy (`src/queries/examples-policy.ts`).
+import { figureSvg } from "../../vendor/anatomy/iso-kit";
+import { figureBody } from "../figure/art";
+import { HEIGHT, WIDTH } from "../figure/layout";
+import { RATE_LIMIT, durationOf, windowOf } from "../figure/model";
+import { FIGURE_QUERIES } from "../queries/examples-policy";
+
+const label =
+  "A counting-house machine on a bench that stands for the Agris gateway. A query card leaves the client's tray, passes a turnstile whose 60-tooth ratchet wheel is the rate limit, is punched with its canonical cache key, and passes a gauge with three fences for the query limits. A rack of six pigeonholes, each with a lock and an hourglass, is the edge cache: a card whose key matches a stored answer gets it back at once. On a miss the card goes on to a splitter whose two rods are the private Service Bindings: one to a twelve-drawer card cabinet, the catalog, and one to a carousel with six cradles, the Pearl Abyss coordinator, whose conduit is the only line that leaves the bench. The answer is stamped with its Cache-Control, filed in its pigeonhole if it may be stored, and returned to the tray.";
+
+const svg = figureSvg({ width: WIDTH, height: HEIGHT, label, body: figureBody() });
+const data = JSON.stringify(FIGURE_QUERIES);
+const buttons = FIGURE_QUERIES.map((query) => ({
+  kind: query.kind,
+  label: query.label,
+  window: query.policy.mode === "no-store" ? "never stored" : durationOf(query.policy.maxAge),
+}));
+const prices = FIGURE_QUERIES.find((query) => query.kind === "prices");
+const firstReadout = prices === undefined ? "" : `ready · ${windowOf(prices.policy)} · ${RATE_LIMIT.limit} per minute`;
+---
+
+<figure class="iso-figure fx" data-exchange aria-labelledby="fx-caption">
+  <div class="iso-plate">
+    <div class="iso-plate-corners" aria-hidden="true">
+      <span class="iso-plate-corner" data-corner="fig">Fig 1</span>
+      <span class="iso-plate-corner" data-corner="title">The Agris exchange</span>
+      <span class="iso-plate-corner" data-corner="hint">Send a card · 1–5 · ← → speed</span>
+      <span class="iso-plate-corner" data-corner="readout" data-readout>{firstReadout}</span>
+    </div>
+    <div
+      class="iso-stage fx-stage"
+      data-stage
+      tabindex="0"
+      role="group"
+      aria-label="The Agris exchange. Keys 1 to 5 send a query card, F floods the turnstile, left and right arrows change the speed of time."
+    >
+      <Fragment set:html={svg} />
+    </div>
+    <p class="fx-scroll-hint" aria-hidden="true">← Drag the bench · it follows the card →</p>
+    <div class="fx-controls">
+      <div class="fx-sends" role="group" aria-label="Send a query card">
+        {
+          buttons.map((button, index) => (
+            <button type="button" class="fx-button" data-send={button.kind}>
+              <span class="fx-key" aria-hidden="true">{index + 1}</span>
+              <span class="fx-name">{button.label}</span>
+              <span class="fx-term">{button.window}</span>
+            </button>
+          ))
+        }
+        <button type="button" class="fx-button fx-flood" data-send="flood">
+          <span class="fx-key" aria-hidden="true">F</span>
+          <span class="fx-name">Flood</span>
+          <span class="fx-term">61st in a minute</span>
+        </button>
+      </div>
+      <div class="fx-speed" role="group" aria-label="Speed of time">
+        <span class="fx-speed-label" aria-hidden="true">Time</span>
+        <button type="button" class="fx-chip" data-speed="1" aria-pressed="true">1×</button>
+        <button type="button" class="fx-chip" data-speed="10" aria-pressed="false">10×</button>
+        <button type="button" class="fx-chip" data-speed="60" aria-pressed="false">60×</button>
+      </div>
+    </div>
+    <p class="fx-announce" data-announce aria-live="polite"></p>
+    <script type="application/json" data-fx set:html={data} />
+  </div>
+  <figcaption class="iso-legend" id="fx-caption">
+    <span class="iso-keys">
+      <span class="iso-key"><svg class="iso-swatch" data-mark="lit" viewBox="0 0 16 10" aria-hidden="true"><path d="M2 4.5 8 1.5 14 4.5 14 6 8 9 2 6Z" /></svg>The card you sent, then its answer</span>
+      <span class="iso-key"><svg class="iso-swatch" data-mark="raised" viewBox="0 0 16 10" aria-hidden="true"><path d="M2 4.5 8 1.5 14 4.5 14 6 8 9 2 6Z" /><path class="iso-swatch-crease" d="M2 4.5 8 7.5 14 4.5" /></svg>Hourglass: upper bulb fresh, lower bulb stale-while-revalidate</span>
+      <span class="iso-key"><svg class="iso-swatch" data-mark="dim" viewBox="0 0 16 10" aria-hidden="true"><path d="M1.5 5h13" /></svg>Rods: private Service Bindings. Only the line on the right leaves the bench, for Pearl Abyss</span>
+    </span>
+    <span class="iso-caption">
+      Left to right: the client's tray, the turnstile (60 requests a minute per IP on a self-hosted gateway), the punch
+      that turns a query into its canonical key, the gauge (depth 8, 150 fields, 15 aliases), the pigeonhole rack (the
+      edge cache), the stamp, and the splitter that sends a miss down two Service Bindings: to the catalog's twelve
+      drawers, which answer from memory, and to the six-cradle carousel that holds at most six Pearl Abyss calls at once
+      and lets identical ones share a cradle. Each call runs out along the one line that leaves the bench, and back. The
+      file at the back holds master cards: persisted operations a client names by hash. Times are simulated; 60× makes
+      a minute pass in a second.
+    </span>
+  </figcaption>
+</figure>
+
+<script>
+  import { mountExchange } from "../figure/live";
+
+  for (const root of document.querySelectorAll<HTMLElement>("[data-exchange]")) mountExchange(root);
+</script>
