@@ -3,11 +3,11 @@
 Thanks for helping. Agris is small, so the process is too.
 
 1. Install the toolchain: `proto install`, then `pnpm install`.
-2. Make your change on a branch. Read [AGENTS.md](AGENTS.md) for where code belongs and the repository's conventions; it applies to people as much as to coding agents.
+2. Find or open the issue your change fixes, then make the change on a branch. One pull request per issue; work in several dependent parts is a stack of pull requests (`gh stack`). Read [AGENTS.md](AGENTS.md) for where code belongs and the repository's conventions; it applies to people as much as to coding agents.
 3. If you change behaviour, change the matching scenario in `tests/features/` first.
 4. If you change a subgraph schema, a persisted operation or catalog data, run `moon run agris:generate` and commit the regenerated files.
 5. Run `moon run agris:check`. It must pass.
-6. Open a pull request that says what changed and why.
+6. Open a pull request that says `Closes #N` for its issue, what changed and why, and how you reproduced a bug before fixing it.
 
 Some things to keep in mind:
 

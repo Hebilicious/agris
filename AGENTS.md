@@ -43,10 +43,18 @@ Every operation is a moon task; run them as `moon run <project>:<task>`. Toolcha
 
 Deploy tasks (`agris:deploy`, `agris:demo-deploy`, `agris:docs-deploy`, `infra:*-deploy`, `infra:destroy`, `infra:smoke-destroy`, `smoke:smoke`) change a live Cloudflare account: run them only when the user asks.
 
+## Workflow: issues, branches and pull requests
+
+- Every change starts from a GitHub issue. If none exists, open one that states the problem before writing code. A bug or a security finding is reproduced first, as a scenario that fails on the current code; if it cannot be reproduced locally, the issue and the pull request say so and why.
+- One concern per pull request, and one pull request per issue. Group issues in one pull request only when their code cannot be separated, and name every one of them. The body says `Closes #N` for each issue it fixes (CI's `pr-issue-link` check refuses a body without one), what changed, and how it was reproduced.
+- Never commit to `main`. Work that has more than one concern, or whose parts depend on each other, is a stack of pull requests made with `gh stack` ([.agents/skills/gh-stack/SKILL.md](.agents/skills/gh-stack/SKILL.md)): plan the layers and run `gh stack init` before writing code, commit each change in the layer that owns it, and keep every layer passing `agris:check` on its own. Independent work goes in its own stack or pull request, never on top of an unrelated one.
+- Agents in parallel each work in their own git worktree on their own branch; the agent that splits or merges their work owns the stack. Push, submit and merge only when the user asks.
+- A change under `packages/catalog-subgraph/src/` or `packages/pearl-abyss/src/`, or to catalog data, changes the catalog identity: run `agris:generate` in that branch, and regenerate rather than hand-resolve a conflict in `generated-catalog-identity.ts`. Fig 1 prints cache keys, so re-record it (`website:record-figure`) in the top pull request of a stack that changes the identity.
+
 ## Conventions
 
 - TypeScript only, strict, with no `any` or `@ts-ignore`. The site is `.astro` components with TypeScript frontmatter and scripts, and no UI framework.
-- Lint with oxlint, format with oxfmt (120 columns). `website/vendor/` holds the anatomy figure kit kept byte-identical to upstream, including its `.mjs` modules (the one exception to TypeScript only, with `.d.mts` declarations beside them), and is excluded from both.
+- Lint with oxlint, format with oxfmt (120 columns). `website/vendor/` holds the anatomy figure kit kept byte-identical to upstream, including its `.mjs` modules (the one exception to TypeScript only, with `.d.mts` declarations beside them), and is excluded from both. `.agents/skills/gh-stack/` is the `gh-stack` skill as `gh skill install github/gh-stack skills/gh-stack --dir .agents/skills` writes it; it is excluded from oxfmt, and changes only through `gh skill update`.
 - Dependencies: add the version to `catalog:` in `pnpm-workspace.yaml` and reference it as `"catalog:"` from the package. Packages are `private` and export `src/*.ts` directly.
 - Keep every `tsconfig.json` `extends` relative to its project: other workspaces mount Agris as a git submodule and install its `packages/*` and `apps/*` through pnpm.
 - List everything a cached task reads in its `inputs`. Moon does not fold a dependency task's hash into its dependents, so `deps` only orders tasks; a task that runs, imports or reads another project's code also takes `@group(agris-sources)` (`.moon/tasks/sources.yml`), and a new cross-project read joins that group.
