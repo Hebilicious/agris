@@ -114,12 +114,12 @@ Pearl Abyss returns one ambiguous answer for both "unknown item" and "no market 
 | Items per summary batch            | 100 distinct                                                                                                   |
 | Summary batches per request        | 6 distinct                                                                                                     |
 | `searchItems.first`                | 1 to 100                                                                                                       |
-| Rate limit, self-hosted gateway    | none                                                                                                           |
+| Rate limit, self-hosted gateway    | 60 per minute per IP (an IPv6 /64), per Cloudflare location, every path                                        |
 | Rate limit, shared demo            | 10 per minute per IP and 120 in all, per Cloudflare location; 10 Central Market reads per minute per IP, exact |
 | Pearl Abyss concurrency (per host) | 6 active requests, up to 100 more queued                                                                       |
 | Pearl Abyss request timeout        | 30 seconds, time waiting in the queue included                                                                 |
 
-These are the defaults. A deployment can change or turn off the depth, field and alias limits (`QUERY_MAX_*`), turn on or change both rate limits, change the Pearl Abyss concurrency, and change the subrequest budget; [deploy.md](deploy.md#configuration) lists every setting.
+These are the defaults. A deployment can change or turn off the depth, field and alias limits (`QUERY_MAX_*`), change or turn off both rate limits, change the Pearl Abyss concurrency, and change the subrequest budget; [deploy.md](deploy.md#configuration) lists every setting.
 
 ## Caching
 

@@ -166,14 +166,15 @@ export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSetting
 });
 
 /**
- * A self-hosted deployment with nothing set has no limit on clients, whether one at a time or all together, six Pearl
- * Abyss calls at a time per host with a burst backstop of a hundred per ten seconds in all, fifty subrequests per
- * invocation, and the default cache. The Pearl Abyss limits protect the upstream whoever is asking, so a client limit
- * is the deployer's choice: set `CLIENT_RATE_LIMIT_REQUESTS` to turn one on, and `MARKET_CLIENT_LIMIT_REQUESTS` for an
- * exact limit on each client's market executions.
+ * A self-hosted deployment with nothing set limits each client to sixty requests a minute at each Cloudflare location,
+ * and sets no limit for all clients together and no exact market limit; it makes six Pearl Abyss calls at a time per
+ * host with a burst backstop of a hundred per ten seconds in all, fifty subrequests per invocation, and runs the default
+ * cache. Its gateway answers anyone on `workers.dev` from the moment it deploys, so the client limit is on unless the
+ * deployer sets `CLIENT_RATE_LIMIT_REQUESTS=0`; `MARKET_CLIENT_LIMIT_REQUESTS` adds an exact limit on each client's
+ * market executions, at the cost of a Durable Object request for each of them.
  */
 export const SELF_HOSTED_DEFAULTS = Object.freeze({
-  clientRateLimit: { limit: 0, period: 60, namespaceId: "42010" },
+  clientRateLimit: { limit: 60, period: 60, namespaceId: "42010" },
   globalRateLimit: { limit: 0, period: 60, namespaceId: "42011" },
   marketClientLimit: { limit: 0, periodSeconds: 60 },
   pearlAbyssRateLimit: { limit: 100, period: 10, namespaceId: "42003" },

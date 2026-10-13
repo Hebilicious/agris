@@ -85,6 +85,10 @@ const steps: readonly StepDefinition<DeploySettingsWorld>[] = [
       ["agris", "agris-cache", "agris-market", "agris-catalog"],
     );
   }),
+  step("its gateway binds a client rate limit of 60 a minute and no global rate limit", noStepArguments, (world) => {
+    assert.deepEqual(boundRate(gateway(world).env, "CLIENT_RATE_LIMITER"), { limit: 60, period: 60 });
+    assert.equal(boundRate(gateway(world).env, "GLOBAL_RATE_LIMITER"), null);
+  }),
   step("its gateway binds no client rate limit and no global rate limit", noStepArguments, (world) => {
     assert.equal(boundRate(gateway(world).env, "CLIENT_RATE_LIMITER"), null);
     assert.equal(boundRate(gateway(world).env, "GLOBAL_RATE_LIMITER"), null);
