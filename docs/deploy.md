@@ -29,14 +29,20 @@ Nothing about your account is stored in the repository. The account comes from `
 [proto](https://moonrepo.dev/proto) installs the exact Node.js, pnpm and moon versions pinned in `.prototools`.
 
 ```sh
-curl -fsSL https://moonrepo.dev/install/proto.sh | bash
+curl -fsSLO https://github.com/moonrepo/proto/releases/download/v0.63.1/proto_cli-installer.sh
+echo "e33cc6e6e1834ac3d769e311415b4a12013ae33fe2b27cdcf34340a62d97c2b6  proto_cli-installer.sh" | sha256sum -c
+PROTO_HOME="$HOME/.proto" PROTO_CLI_NO_MODIFY_PATH=1 sh proto_cli-installer.sh
+~/.proto/bin/proto setup
+```
+
+The installer is proto's own, from the release `.prototools` pins (`proto = "0.63.1"`): it is saved to a file you can read before running it, its own SHA-256 is checked against the one GitHub publishes for that release before it runs (on a Mac without `sha256sum`, use `shasum -a 256 -c`), and it checks the SHA-256 of the proto build it downloads. `PROTO_HOME` makes it install into `~/.proto` even when your shell sets `PROTO_HOME` or `XDG_DATA_HOME`, so `~/.proto/bin/proto` is where it put proto. `proto setup` adds proto and its shims to your shell profile. Open a new shell so `proto`, `pnpm` and `moon` are on your `PATH`, then:
+
+```sh
 git clone https://github.com/Hebilicious/agris.git
 cd agris
 proto install
 pnpm install
 ```
-
-Open a new shell after installing proto so `proto`, `pnpm` and `moon` are on your `PATH`.
 
 ### 2. Credentials
 

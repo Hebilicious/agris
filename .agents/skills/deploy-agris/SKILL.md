@@ -10,22 +10,27 @@ The result is a gateway URL on the user's account that passed `/health` and a sa
 ## 1. Toolchain
 
 ```sh
-command -v proto || curl -fsSL https://moonrepo.dev/install/proto.sh | bash
+# Skip these three lines if `proto --version` already works. 0.63.1 is the proto version .prototools pins; the
+# checksum is its installer's, and PROTO_HOME makes the installer put proto in ~/.proto whatever the shell sets.
+curl -fsSLO https://github.com/moonrepo/proto/releases/download/v0.63.1/proto_cli-installer.sh
+echo "e33cc6e6e1834ac3d769e311415b4a12013ae33fe2b27cdcf34340a62d97c2b6  proto_cli-installer.sh" | sha256sum -c
+PROTO_HOME="$HOME/.proto" PROTO_CLI_NO_MODIFY_PATH=1 sh proto_cli-installer.sh && ~/.proto/bin/proto setup --yes
 git clone https://github.com/Hebilicious/agris.git && cd agris   # skip if already in a clone
 proto install
 pnpm install
 ```
 
-Done when `moon --version` and `pnpm --version` print the versions in `.prototools`. If `proto` was just installed, start a new shell or source the profile line its installer printed.
+Done when `moon --version` and `pnpm --version` print the versions in `.prototools`. If `proto` was just installed, start a new shell or run the export lines `proto setup` printed.
 
 ## 2. Credentials
 
-Agris deploys with Alchemy, which needs the account ID and a sign-in:
+Agris deploys with Alchemy, which needs the account ID and a sign-in. A secret never passes through the conversation: do not ask the user to paste a token into the chat.
 
-- `CLOUDFLARE_ACCOUNT_ID`: the user reads it from **Workers & Pages** in the dashboard.
-- `CLOUDFLARE_API_TOKEN`: the user creates one from the **Edit Cloudflare Workers** template. On an interactive machine the user can instead run `pnpm --filter @agris/infra exec alchemy profile edit --add Cloudflare` and complete the browser step.
+- `CLOUDFLARE_ACCOUNT_ID`: the user reads it from **Workers & Pages** in the dashboard. It is not a secret; the user may tell you it, and you set it in the environment of the deploy commands.
+- Sign-in, preferred: the user runs `pnpm --filter @agris/infra exec alchemy profile edit --add Cloudflare` in their own terminal, in the clone, and completes the browser step. Alchemy keeps the credentials in its profile outside the repository, and the deploy commands use them with no token in the environment. Check with `pnpm --filter @agris/infra exec alchemy profile show`.
+- Sign-in, where no browser is available: the user creates a token from the **Edit Cloudflare Workers** template and exports `CLOUDFLARE_API_TOKEN` themselves in the shell that runs the deploy commands. Never write it to a file in the repository.
 
-Ask the user for both; keep them in the environment only, never in a file in the repository. Confirm the account with the user before step 4.
+Confirm the account with the user before step 4.
 
 ## 3. Pre-flight
 
@@ -80,7 +85,7 @@ Give the user:
 Report the exact command, exit code and error before diagnosing.
 
 - The deploy stops with "The production stage's settings are invalid": the message names each variable; fix or unset it.
-- Alchemy cannot find an account or credentials: set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, or add a profile as in step 2.
+- Alchemy cannot find an account or credentials: set `CLOUDFLARE_ACCOUNT_ID`, and have the user add a profile as in step 2 or export `CLOUDFLARE_API_TOKEN` in their own shell.
 - Deploy rejects `limits.subrequests`: the account's plan does not allow that `SUBREQUEST_LIMIT`; lower or unset it, or the user upgrades the plan.
 - A query answers `QUERY_BUDGET_EXCEEDED`: it needs more subrequests than `SUBREQUEST_LIMIT` allows; split the query, or raise the limit on a paid plan.
 - Rate-limit namespace conflict: set the namespace variable as in step 3 and redeploy.

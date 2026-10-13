@@ -34,6 +34,7 @@ A moon project's ID is its package name without `@agris/`. `packages/catalog-sub
 Every operation is a moon task; run them as `moon run <project>:<task>`. Toolchain versions come from `.prototools` (`proto install`), dependencies from `pnpm install`.
 
 - `agris:check` before every handoff: format, lint, type checks, tests, generated-artifact checks, the website build and the Alchemy bundles (`agris:bundle`, no account needed), which include the Workers' own entrypoints as a host deploys them.
+- Vulnerabilities are reported privately as `SECURITY.md` says.
 - `agris:format` to fix formatting; `agris:format-check` to verify it.
 - `agris:generate` after changing a subgraph schema, a persisted operation, or catalog data.
 - `tests:test-headless`, `tests:test-integration`, `tests:test-workers` for one test layer.
