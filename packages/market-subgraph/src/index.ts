@@ -3,6 +3,7 @@ import { positiveItemId } from "@agris/pearl-abyss/item-id";
 import { PEARL_ABYSS_ITEM_LOCALE_DESCRIPTIONS } from "@agris/pearl-abyss/locales";
 import { PEARL_ABYSS_REGION_DESCRIPTIONS } from "@agris/pearl-abyss/regions";
 import {
+  isPearlAbyssMarketCategory,
   MarketSummaryBudgetExceededError,
   PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS,
   PearlAbyssUpstreamError,
@@ -15,6 +16,7 @@ import { GraphQLError, parse } from "graphql";
 import { createYoga, maskError as maskWithYoga } from "graphql-yoga";
 
 import {
+  MarketSummaryBatchLimitError,
   requestScopedMarketReader,
   type HotMarketItem,
   type ItemLocale,
@@ -123,7 +125,7 @@ export function createMarketSubgraph(input?: MarketSubgraphInput): MarketSubgrap
     schema,
     context: ({ reader, clock }) => ({
       ...initContextCache(),
-      reader: requestScopedMarketReader(readErrorsAsQueryErrors(reader)),
+      reader: readErrorsAsQueryErrors(requestScopedMarketReader(reader)),
       clock,
       observations: new Map(),
     }),
@@ -164,9 +166,9 @@ const MARKET_ERRORS = new WeakSet<Error>();
 
 /**
  * The reader, with each way a read can fail reported as a `MarketErrorCode` with a fixed message.
- * A budget refusal is `QUERY_BUDGET_EXCEEDED`: the query asks for more Pearl Abyss requests, or more summary batches,
- * than the deployment allows, which the caller fixes by asking less. A throttled read is `RATE_LIMITED`. A read that
- * failed to arrive is `UPSTREAM_UNAVAILABLE`, without the reason, which is about Pearl Abyss's internals.
+ * A budget refusal is `QUERY_BUDGET_EXCEEDED`: the query asks for more Pearl Abyss requests, or bigger or more summary
+ * batches, than the deployment allows, which the caller fixes by asking less. A throttled read is `RATE_LIMITED`. A
+ * read that failed to arrive is `UPSTREAM_UNAVAILABLE`, without the reason, which is about Pearl Abyss's internals.
  */
 function readErrorsAsQueryErrors(reader: MarketReader): MarketReader {
   const guard = <Value>(read: () => Promise<Value>): Promise<Value> =>
@@ -185,6 +187,9 @@ function readErrorsAsQueryErrors(reader: MarketReader): MarketReader {
 }
 
 function readErrorAsQueryError(error: unknown): unknown {
+  if (error instanceof MarketSummaryBatchLimitError) {
+    return marketError(error.message, "QUERY_BUDGET_EXCEEDED");
+  }
   if (error instanceof MarketSummaryBudgetExceededError) {
     return marketError(
       `Market summary operation exceeds this deployment's limit of ${error.limit} distinct batches`,
@@ -619,18 +624,22 @@ function createMarketSchema() {
         type: [MarketItemRef],
         nullable: true,
         description:
-          "Every item listed in a category, ordered by item ID. Null when it could not be read; the error says why.",
+          "Every item listed in one category, ordered by item ID. Null when it could not be read; the error says why.",
         args: {
           category: field.arg({
             type: MarketCategoryInputRef,
-            required: false,
-            description: "The category to list. Omit it for every category.",
+            required: true,
+            description:
+              "The category to list: a main category, which reads each of its subcategories, or one subcategory.",
           }),
         },
         resolve: async (market, arguments_, context) => {
-          const category: MarketCategory | null = arguments_.category
-            ? { main: arguments_.category.main, sub: arguments_.category.sub ?? null }
-            : null;
+          const category: MarketCategory = { main: arguments_.category.main, sub: arguments_.category.sub ?? null };
+          if (!isPearlAbyssMarketCategory(category)) {
+            const named =
+              category.sub === null ? `main ${category.main}` : `main ${category.main}, sub ${category.sub}`;
+            throw marketError(`Unknown Central Market category: ${named}`, "BAD_USER_INPUT");
+          }
           const items = await market.observation.beforeRead(() =>
             context.reader.readCatalog({ region: market.region, locale: market.locale, category }),
           );
@@ -700,8 +709,6 @@ function observationFor(context: MarketGraphContext, region: MarketRegion, local
   return observation;
 }
 
-const MARKET_SUMMARY_BATCH_LIMIT = 100;
-
 async function loadItemMarketSummaries(
   keys: readonly ItemMarketSummaryKey[],
   region: MarketRegion,
@@ -712,14 +719,8 @@ async function loadItemMarketSummaries(
   const locale = keys[0]?.locale;
   if (locale === undefined) throw new TypeError("Item market-summary batch must not be empty");
 
-  const itemIds = [...new Set(keys.map((key) => key.itemId))];
-  if (itemIds.length > MARKET_SUMMARY_BATCH_LIMIT) {
-    throw marketError(
-      `Market summary batch exceeds the ${MARKET_SUMMARY_BATCH_LIMIT}-Item limit`,
-      "QUERY_BUDGET_EXCEEDED",
-    );
-  }
-
+  // The reader refuses a batch over the summary batch limit, as it does for `Market.items`.
+  const itemIds = keys.map((key) => key.itemId);
   const observation = observationFor(context, region, locale);
   const summaries = await observation.beforeRead(() => context.reader.readSummaries({ region, locale, itemIds }));
   const observedAt = await observation.value();

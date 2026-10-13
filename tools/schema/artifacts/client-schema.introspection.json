@@ -362,15 +362,19 @@
         "fields": [
           {
             "name": "catalog",
-            "description": "Every item listed in a category, ordered by item ID. Null when it could not be read; the error says why.",
+            "description": "Every item listed in one category, ordered by item ID. Null when it could not be read; the error says why.",
             "args": [
               {
                 "name": "category",
-                "description": "The category to list. Omit it for every category.",
+                "description": "The category to list: a main category, which reads each of its subcategories, or one subcategory.",
                 "type": {
-                  "kind": "INPUT_OBJECT",
-                  "name": "MarketCategoryInput",
-                  "ofType": null
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "name": "MarketCategoryInput",
+                    "kind": "INPUT_OBJECT",
+                    "ofType": null
+                  }
                 },
                 "defaultValue": null,
                 "isDeprecated": false,

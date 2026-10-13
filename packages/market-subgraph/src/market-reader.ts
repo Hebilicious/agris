@@ -82,7 +82,8 @@ export interface MarketEnhancedItemRead extends MarketItemRead {
 }
 
 export interface MarketCatalogRead extends MarketReadContext {
-  readonly category: MarketCategory | null;
+  /** One main category, or one subcategory of it when `sub` is set. */
+  readonly category: MarketCategory;
 }
 
 export interface MarketReader {
@@ -95,6 +96,21 @@ export interface MarketReader {
   readRegistrations(input: MarketReadContext): Promise<readonly MarketRegistration[]>;
 }
 
+/** The most distinct items one summary read may ask for, whichever field asks: `Market.items` or `Item.marketSummary`. */
+export const MARKET_SUMMARY_BATCH_LIMIT = 100;
+
+/** A summary read asked for more than `MARKET_SUMMARY_BATCH_LIMIT` distinct items; nothing was read. */
+export class MarketSummaryBatchLimitError extends Error {
+  public constructor(public readonly limit: number) {
+    super(`Market summary batch exceeds the ${limit}-Item limit`);
+    this.name = "MarketSummaryBatchLimitError";
+  }
+}
+
+/**
+ * One reader per GraphQL execution: matching reads share one upstream read, and a summary read over
+ * `MARKET_SUMMARY_BATCH_LIMIT` distinct items is refused before it reaches `reader`.
+ */
 export function requestScopedMarketReader(reader: MarketReader): MarketReader {
   const summaryReads = new Map<string, Promise<readonly MarketSummary[]>>();
   const listingReads = new Map<string, Promise<readonly MarketListing[]>>();
@@ -106,6 +122,9 @@ export function requestScopedMarketReader(reader: MarketReader): MarketReader {
   return {
     readSummaries: (input) => {
       const itemIds = [...new Set(input.itemIds)].sort((left, right) => left - right);
+      if (itemIds.length > MARKET_SUMMARY_BATCH_LIMIT) {
+        return Promise.reject(new MarketSummaryBatchLimitError(MARKET_SUMMARY_BATCH_LIMIT));
+      }
       return memoized(summaryReads, key(input, `summaries:${itemIds.join(",")}`), () =>
         reader.readSummaries({ ...input, itemIds }),
       );
@@ -121,10 +140,8 @@ export function requestScopedMarketReader(reader: MarketReader): MarketReader {
         reader.readPriceHistory(input),
       ),
     readCatalog: (input) =>
-      memoized(
-        catalogReads,
-        key(input, `catalog:${input.category?.main ?? "all"}:${input.category?.sub ?? "all"}`),
-        () => reader.readCatalog(input),
+      memoized(catalogReads, key(input, `catalog:${input.category.main}:${input.category.sub ?? "all"}`), () =>
+        reader.readCatalog(input),
       ),
     readHotItems: (input) => memoized(hotItemReads, key(input, "hot-items"), () => reader.readHotItems(input)),
     readRegistrations: (input) =>

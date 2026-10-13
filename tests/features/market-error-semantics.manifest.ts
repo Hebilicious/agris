@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import type { GatewayPlugin } from "@graphql-hive/gateway-runtime";
 import { Effect } from "effect";
+import { isObjectType } from "graphql";
 
 import { createCatalogSubgraph } from "../../packages/catalog-subgraph/src/index.ts";
 import { PEARL_ABYSS_REGION_HOSTS } from "../../packages/pearl-abyss/src/protocol/regions.ts";
 import {
+  clientSchema,
   executeAgrisProxy,
   handleAgrisProxyRequest,
   type AgrisProxyRuntimeEnv,
@@ -54,6 +56,8 @@ interface MarketErrorSemanticsWorld {
   behaviour?: PearlAbyssBehaviour;
   /** Requests that reached Pearl Abyss, past the coordinator's limiter. */
   pearlAbyssRequests: number;
+  /** The item IDs of each summary request that reached Pearl Abyss. */
+  summaryBatches: number[][];
   answers: Answer[];
   /** Each data-table row's expectation, in the order of `answers`. */
   expectations: string[];
@@ -161,6 +165,15 @@ const steps: readonly StepDefinition<MarketErrorSemanticsWorld>[] = [
       world.expectations.push(row.expected);
     }
   }),
+  step("a caller asks the gateway for the EU summaries of 101 distinct items", noStepArguments, async (world) => {
+    world.answers.push(await ask(world, summariesQuery(101)));
+  }),
+  step("a caller asks the gateway for the EU summaries of 100 distinct items", noStepArguments, async (world) => {
+    world.answers.push(await ask(world, summariesQuery(100)));
+  }),
+  step("a caller asks the gateway for the EU catalog without a category", noStepArguments, async (world) => {
+    world.answers.push(await ask(world, `{ market(region: EU) { catalog { basePrice } } }`));
+  }),
   step("a caller asks the gateway for the EU and NA summaries of item 10006", noStepArguments, async (world) => {
     world.answers.push(
       await ask(
@@ -246,6 +259,43 @@ const steps: readonly StepDefinition<MarketErrorSemanticsWorld>[] = [
     },
   ),
   step(
+    "the gateway answers 200 with a QUERY_BUDGET_EXCEEDED error at market.items and no Pearl Abyss request",
+    noStepArguments,
+    (world) => {
+      const answer = onlyAnswer(world);
+      assert.equal(answer.status, 200, JSON.stringify(answer.body));
+      const errors = answer.body.errors ?? [];
+      assert.ok(errors.length > 0, "the answer has no errors");
+      for (const error of errors) {
+        assert.equal(error.extensions?.code, "QUERY_BUDGET_EXCEEDED", JSON.stringify(error));
+        assert.deepEqual(error.path?.slice(0, 2), ["market", "items"]);
+      }
+      assert.equal(world.pearlAbyssRequests, 0);
+    },
+  ),
+  step("the gateway answers 200 with 100 listed items from one Pearl Abyss request", noStepArguments, (world) => {
+    const answer = onlyAnswer(world);
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.equal(answer.body.errors, undefined);
+    assert.deepEqual(world.summaryBatches, [itemIds(100)]);
+  }),
+  step(
+    "the gateway answers 400 that the query is invalid for the schema, with no Pearl Abyss request",
+    noStepArguments,
+    (world) => {
+      const answer = onlyAnswer(world);
+      assert.equal(answer.status, 400, JSON.stringify(answer.body));
+      assert.deepEqual(answer.body.errors?.[0]?.message, "The GraphQL query is invalid for this schema");
+      assert.equal(world.pearlAbyssRequests, 0);
+    },
+  ),
+  step("the client schema requires Market.catalog's category", noStepArguments, () => {
+    const market = clientSchema.getType("Market");
+    assert.ok(isObjectType(market));
+    const category = market.getFields().catalog?.args.find((argument) => argument.name === "category");
+    assert.equal(String(category?.type), "MarketCategoryInput!");
+  }),
+  step(
     "each answer is 200 with BAD_USER_INPUT errors carrying its message, and no Pearl Abyss request",
     noStepArguments,
     (world) => {
@@ -288,6 +338,7 @@ export const marketErrorSemanticsFeature: ExecutableFeatureManifest<MarketErrorS
   uri: "tests/features/market-error-semantics.feature",
   createWorld: () => ({
     pearlAbyssRequests: 0,
+    summaryBatches: [],
     answers: [],
     expectations: [],
     edge: new Map(),
@@ -375,12 +426,21 @@ async function pearlAbyss(world: MarketErrorSemanticsWorld, hostname: string, re
     typeof body === "object" && body !== null && "searchResult" in body ? body.searchResult : undefined;
   assert.equal(typeof searchResult, "string", "only summary reads reach this fake Pearl Abyss");
   const ids = String(searchResult).split(",").map(Number);
+  world.summaryBatches.push(ids);
   const rows = ids.map((itemId) => `${itemId}-1-${itemId}-3`).join("|");
   return bytesResponse(new TextEncoder().encode(JSON.stringify({ resultCode: 0, resultMsg: rows })));
 }
 
 function bytesResponse(bytes: Uint8Array<ArrayBuffer>): Response {
   return new Response(bytes, { status: 200, headers: { "Content-Length": String(bytes.byteLength) } });
+}
+
+function summariesQuery(count: number): string {
+  return `{ market(region: EU) { items(ids: ${JSON.stringify(itemIds(count).map(String))}) { basePrice } } }`;
+}
+
+function itemIds(count: number): number[] {
+  return Array.from({ length: count }, (_unused, index) => 20_000 + index);
 }
 
 function rows(table: DataTable, expectation: string): { readonly query: string; readonly expected: string }[] {

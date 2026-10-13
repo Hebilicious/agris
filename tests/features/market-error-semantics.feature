@@ -54,12 +54,33 @@ Feature: Market error semantics
     Then each answer is 200 with a QUERY_BUDGET_EXCEEDED error at its path, and no Pearl Abyss request
     And no answer is stored
 
+  @scenario:market-items-summary-batch-limit @provenance:spec @i0
+  Scenario: Market.items obeys the 100-item summary batch limit
+    Given Pearl Abyss answers every request
+    When a caller asks the gateway for the EU summaries of 101 distinct items
+    Then the gateway answers 200 with a QUERY_BUDGET_EXCEEDED error at market.items and no Pearl Abyss request
+
+  @scenario:market-items-summary-batch-at-limit @provenance:spec @i1
+  Scenario: Market.items reads 100 distinct items in one summary batch
+    Given Pearl Abyss answers every request
+    When a caller asks the gateway for the EU summaries of 100 distinct items
+    Then the gateway answers 200 with 100 listed items from one Pearl Abyss request
+
+  @scenario:market-catalog-needs-category @provenance:spec @i0
+  Scenario: Market.catalog without a category is refused before any work
+    Given Pearl Abyss answers every request
+    When a caller asks the gateway for the EU catalog without a category
+    Then the gateway answers 400 that the query is invalid for the schema, with no Pearl Abyss request
+    And the client schema requires Market.catalog's category
+
   @scenario:market-client-input-errors @provenance:spec @i0
   Scenario: A mistake in a market argument is a BAD_USER_INPUT field error that says what is wrong
     Given Pearl Abyss answers every request
     When a caller asks the gateway for each of these
       | query                                                                        | message                                              |
       | { market(region: EU) { items(ids: ["abc"]) { basePrice } } }                 | Item ID must be a positive safe integer              |
+      | { market(region: EU) { catalog(category: { main: 0 }) { basePrice } } }      | Unknown Central Market category: main 0              |
+      | { market(region: EU) { catalog(category: { main: 1, sub: 99 }) { basePrice } } } | Unknown Central Market category: main 1, sub 99  |
       | { market(region: EU) { items(ids: ["1"]) { orderBook(enhancementLevel: 21) { price } } } } | Enhancement level must be an integer from 0 through 20 |
     Then each answer is 200 with BAD_USER_INPUT errors carrying its message, and no Pearl Abyss request
 
