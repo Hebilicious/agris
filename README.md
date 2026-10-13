@@ -195,7 +195,7 @@ A misspelt setting or a value Agris cannot use stops the deploy before anything 
 | `CACHE_QUERY_SEARCH_ITEMS_MAX_AGE_SECONDS`                       | `31536000` |       | `0`      |
 | `CACHE_QUERY_SEARCH_ITEMS_STALE_WHILE_REVALIDATE_SECONDS`        | `86400`    |       | `0`      |
 
-**Rate limits.** Workers rate limits on `/graphql`, counted per Cloudflare location. `0` requests binds no limiter. A self-hosted gateway limits no client by default; the Pearl Abyss limits below protect the upstream either way.
+**Rate limits.** Exact limits on every request to the gateway, `/health` and preflights included, kept by a Durable Object token bucket per client (an IPv6 address by its /64) and one for the whole deployment, behind a per-location Workers rate-limit binding at the same rate as a cheap first line. `0` requests sets neither. A self-hosted gateway limits no client by default; the Pearl Abyss limits below protect the upstream either way. See [docs/deploy.md](docs/deploy.md#rate-limits).
 
 | Variable                           | Default | Demo    | Turn off |
 | ---------------------------------- | ------- | ------- | -------- |

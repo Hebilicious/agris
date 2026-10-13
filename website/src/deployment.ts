@@ -22,9 +22,9 @@ export interface Rate {
 }
 
 export interface DeploymentFacts {
-  /** `CLIENT_RATE_LIMITER` on the gateway: requests per IP, per Cloudflare location, or none. */
+  /** The gateway's exact limit per client IP (`ADMISSION_CLIENT_*`), or none. */
   readonly clientRateLimit: Rate | null;
-  /** `GLOBAL_RATE_LIMITER` on the gateway: requests per Cloudflare location, or none. */
+  /** The gateway's exact limit for all clients together (`ADMISSION_GLOBAL_*`), or none. */
   readonly globalRateLimit: Rate | null;
   /** The deployment's `CACHE_*` settings, as changes to the defaults, or `null` when it sets none. */
   readonly cacheFreshnessOverride: CacheFreshnessOverride | null;

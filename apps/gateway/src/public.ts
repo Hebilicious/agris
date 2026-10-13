@@ -1,11 +1,13 @@
-import { WorkerEntrypoint } from "cloudflare:workers";
+import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 
+import { AdmissionBucket } from "./admission.js";
 import type { GatewayEnv, PublicGatewayEnv } from "./env.js";
 import { serviceBindingPort } from "./gateway.js";
 import privateAgrisProxy from "./index.js";
 import { handlePublicGatewayRequest } from "./public-gateway.js";
 
 export type { AssetsPort, PublicGatewayEnv, PublicGatewaySettings, RateLimitPort } from "./env.js";
+export type { AdmissionNamespacePort } from "./admission.js";
 export { handlePublicGatewayRequest, type PublicGatewayHost } from "./public-gateway.js";
 
 /**
@@ -21,6 +23,19 @@ export { CachedAgrisProxy } from "./index.js";
 export class AgrisProxy extends WorkerEntrypoint<GatewayEnv> {
   public fetch(request: Request): Promise<Response> {
     return privateAgrisProxy.fetch(request, this.env, this.ctx);
+  }
+}
+
+/**
+ * The exact admission object: one per client and one for the whole deployment, each storing one token bucket. A host
+ * that sets an `ADMISSION_*` limit binds this class as `ADMISSION`, with a migration that adds it as a new SQLite class:
+ * the bucket lives in its synchronous key-value storage, which only SQLite-backed objects have.
+ */
+export class GatewayAdmission extends DurableObject<PublicGatewayEnv> {
+  private readonly bucket = new AdmissionBucket(this.ctx.storage.kv);
+
+  public fetch(request: Request): Promise<Response> {
+    return this.bucket.answer(request, Date.now());
   }
 }
 

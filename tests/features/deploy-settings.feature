@@ -34,6 +34,7 @@ Feature: Deploy settings
       | GRAPHIQL                         | disabled          |
       | AGRIS_DOMAIN                     | agris.example.com |
     Then its gateway binds a client rate limit of 30 a minute and a global rate limit of 300 per 10 seconds
+    And its gateway admits each client exactly 30 a minute and the deployment exactly 300 per 10 seconds
     And its market Worker binds no Pearl Abyss rate limit and a concurrency of 0
     And its gateway binds CACHE_ENABLED, QUERY_MAX_DEPTH and GRAPHIQL as they were set
     And it answers on agris.example.com as well as workers.dev
@@ -51,6 +52,7 @@ Feature: Deploy settings
       | AGRIS_DOMAIN                     | not a host |
       | SUBREQUEST_LIMIT                 | 0          |
       | SUBREQUEST_LIMITS                | 100        |
+      | ADMISSION_CLIENT_REQUESTS        | 5          |
     Then each environment is refused with an error that names its variable
 
   @scenario:deploy-settings-demo @provenance:spec @i0
@@ -58,5 +60,6 @@ Feature: Deploy settings
     When the demo stage is resolved from an environment that turns every limit off
     Then its Workers are named agris-demo, agris-demo-cache, agris-demo-market and agris-demo-catalog
     And its gateway binds a client rate limit of 10 a minute and a global rate limit of 120 a minute
+    And its gateway admits each client exactly 10 a minute and the deployment exactly 120 a minute
     And its market Worker binds a Pearl Abyss rate limit of 20 a minute for the whole deployment and a concurrency of 2 per host
     And its gateway keeps every storable answer for at least 600 seconds and labels every response as the demo

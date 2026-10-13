@@ -21,6 +21,7 @@ import {
   type CacheFreshnessPolicy,
 } from "@agris/core/cache-freshness";
 import { documentLimitsFromBindings, QUERY_LIMIT_SETTING } from "@agris/core/document-limits";
+import { ADMISSION_SETTING } from "@agris/gateway-worker/admission";
 import { DEFAULT_SUBREQUEST_LIMIT } from "@agris/invocation-budget/subrequest-limit";
 import { Exit, Schema, SchemaTransformation } from "effect";
 import { buildSchema } from "graphql";
@@ -29,7 +30,7 @@ import { clientSchemaSdl } from "../../tools/schema/artifacts/gateway-schemas.ts
 
 const clientSchema = buildSchema(clientSchemaSdl);
 
-/** A Workers rate limit: `limit` requests per `period` seconds, counted per Cloudflare location. */
+/** A rate limit: `limit` requests per `period` seconds. */
 export interface Rate {
   readonly limit: number;
   readonly period: 10 | 60;
@@ -53,9 +54,13 @@ export interface WorkerNames {
 /** Everything one API stage deploys. */
 export interface DeploymentSettings {
   readonly names: WorkerNames;
-  /** `CLIENT_RATE_LIMITER` on the gateway, per client IP; `null` binds none and limits no client. */
+  /**
+   * The gateway's limit per client IP (an IPv6 address by its /64): exact, kept by its `GatewayAdmission` object
+   * (`ADMISSION_CLIENT_*`), behind a `CLIENT_RATE_LIMITER` binding at the same rate as a cheap per-location first line.
+   * `null` sets neither and limits no client.
+   */
   readonly clientRateLimit: RateLimitSetting | null;
-  /** `GLOBAL_RATE_LIMITER` on the gateway, for the whole deployment; `null` binds none. */
+  /** The same for the whole deployment (`ADMISSION_GLOBAL_*` and `GLOBAL_RATE_LIMITER`); `null` sets neither. */
   readonly globalRateLimit: RateLimitSetting | null;
   /**
    * `PA_RATE_LIMITER` on the market Worker, the burst backstop on Pearl Abyss calls for the whole deployment: one
@@ -73,7 +78,10 @@ export interface DeploymentSettings {
   readonly cacheOverride: CacheFreshnessOverride | null;
   /** The cache freshness the gateway runs with. */
   readonly cacheFreshness: CacheFreshnessPolicy;
-  /** Plain-text variables the gateway binds: `CACHE_*`, `QUERY_*`, `GRAPHIQL`, `DEMO_NOTICE`, `DEPLOY_GUIDE_URL`. */
+  /**
+   * Plain-text variables the gateway binds: `CACHE_*`, `QUERY_*`, `ADMISSION_*`, `GRAPHIQL`, `DEMO_NOTICE`,
+   * `DEPLOY_GUIDE_URL`.
+   */
   readonly gatewayVariables: Readonly<Record<string, string>>;
   /** A hostname on a zone in the account that serves the gateway, besides `workers.dev`; `null` for none. */
   readonly domain: string | null;
@@ -106,13 +114,40 @@ export function workerNames(stage: string): WorkerNames {
 const DEMO_CACHE_OVERRIDE: CacheFreshnessOverride = { minimumSeconds: 600 };
 
 /**
- * The shared demo protects Pearl Abyss first: ten requests a minute per visitor, 120 for everyone, two Pearl Abyss calls
- * at a time per host and twenty a minute in all, a ten-minute cache floor, and sparse telemetry.
+ * The gateway's exact admission variables for a stage's client and global limits; a limit that is off sets none, and
+ * the gateway then asks no `GatewayAdmission` object for that scope.
+ */
+function admissionVariables(
+  clientRateLimit: Rate | null,
+  globalRateLimit: Rate | null,
+): Readonly<Record<string, string>> {
+  return {
+    ...(clientRateLimit === null
+      ? {}
+      : {
+          [ADMISSION_SETTING.clientRequests]: String(clientRateLimit.limit),
+          [ADMISSION_SETTING.clientPeriod]: String(clientRateLimit.period),
+        }),
+    ...(globalRateLimit === null
+      ? {}
+      : {
+          [ADMISSION_SETTING.globalRequests]: String(globalRateLimit.limit),
+          [ADMISSION_SETTING.globalPeriod]: String(globalRateLimit.period),
+        }),
+  };
+}
+
+const DEMO_CLIENT_RATE_LIMIT: RateLimitSetting = { limit: 10, period: 60, namespaceId: "42021" };
+const DEMO_GLOBAL_RATE_LIMIT: RateLimitSetting = { limit: 120, period: 60, namespaceId: "42022" };
+
+/**
+ * The shared demo protects Pearl Abyss first: ten requests a minute per visitor, 120 for everyone, both exact, two
+ * Pearl Abyss calls at a time per host and twenty a minute in all, a ten-minute cache floor, and sparse telemetry.
  */
 export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSettings>({
   names: workerNames(DEMO_STAGE),
-  clientRateLimit: { limit: 10, period: 60, namespaceId: "42021" },
-  globalRateLimit: { limit: 120, period: 60, namespaceId: "42022" },
+  clientRateLimit: DEMO_CLIENT_RATE_LIMIT,
+  globalRateLimit: DEMO_GLOBAL_RATE_LIMIT,
   pearlAbyssRateLimit: { limit: 20, period: 60, namespaceId: "42020" },
   pearlAbyssConcurrency: 2,
   subrequestLimit: DEFAULT_SUBREQUEST_LIMIT,
@@ -120,6 +155,7 @@ export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSetting
   cacheFreshness: cacheFreshnessFromBindings(cacheSettingsOf(DEMO_CACHE_OVERRIDE), clientSchema),
   gatewayVariables: {
     ...cacheSettingsOf(DEMO_CACHE_OVERRIDE),
+    ...admissionVariables(DEMO_CLIENT_RATE_LIMIT, DEMO_GLOBAL_RATE_LIMIT),
     GRAPHIQL: "enabled",
     DEMO_NOTICE: `Shared demo, rate-limited. Deploy your own: ${DEPLOY_GUIDE_URL}`,
     DEPLOY_GUIDE_URL,
@@ -133,7 +169,7 @@ export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSetting
  * A self-hosted deployment with nothing set has no limit on clients, whether one at a time or all together, six Pearl
  * Abyss calls at a time per host with a burst backstop of a hundred per ten seconds in all, fifty subrequests per
  * invocation, and the default cache. The Pearl Abyss limits protect the upstream whoever is asking, so a client limit
- * is the deployer's choice: set `CLIENT_RATE_LIMIT_REQUESTS` to turn one on.
+ * is the deployer's choice: set `CLIENT_RATE_LIMIT_REQUESTS` to turn one on, exact.
  */
 export const SELF_HOSTED_DEFAULTS = Object.freeze({
   clientRateLimit: { limit: 0, period: 60, namespaceId: "42010" },
@@ -182,6 +218,8 @@ const OWNED_PREFIXES = [
   "PA_MAX_",
   "SUBREQUEST_",
   "AGRIS_",
+  // The gateway's exact admission variables, which a deploy sets from the `*_RATE_LIMIT_*` settings.
+  "ADMISSION_",
 ];
 const KNOWN_DEPLOY_SETTINGS: ReadonlySet<string> = new Set([...Object.values(DEPLOY_SETTING), ...PASSED_THROUGH]);
 /** Variables with an owned prefix that belong to the tools around a deploy, not to Agris's settings. */
@@ -266,7 +304,7 @@ export function selfHostedSettings(
   const domain = read(DEPLOY_SETTING.domain, Hostname, "a hostname such as agris.example.com") ?? null;
   const workersDev = read(DEPLOY_SETTING.workersDev, Switch, '"true" or "false"') ?? "true";
 
-  const gatewayVariables: Record<string, string> = {};
+  const gatewayVariables: Record<string, string> = { ...admissionVariables(clientRateLimit, globalRateLimit) };
   for (const [name, value] of Object.entries(environment)) {
     if (value !== undefined && PASSED_THROUGH.has(name)) gatewayVariables[name] = value;
   }

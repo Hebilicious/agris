@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { env, createExecutionContext } from "cloudflare:test";
+import { env, createExecutionContext, evictDurableObject } from "cloudflare:test";
 import { withExports } from "cloudflare:workers";
 import { buildClientSchema, buildSchema, getIntrospectionQuery, type IntrospectionQuery } from "graphql";
 import { Schema } from "effect";
@@ -13,9 +13,17 @@ import {
   type AgrisProxyExecutionProps,
   type AgrisProxyRuntimeEnv,
 } from "../../apps/gateway/src/index.ts";
+import { admissionObjectName } from "../../apps/gateway/src/admission.ts";
 import { publicAgrisProxyWorker, type PublicGatewayEnv, type RateLimitPort } from "../../apps/gateway/src/public.ts";
 
-import { noStepArguments, step, type ExecutableFeatureManifest, type StepDefinition } from "../support/manifest.ts";
+import {
+  integerPairStepArguments,
+  integerStepArgument,
+  noStepArguments,
+  step,
+  type ExecutableFeatureManifest,
+  type StepDefinition,
+} from "../support/manifest.ts";
 import { STRICT } from "../support/schema.ts";
 
 const ORIGIN = "https://agris.example";
@@ -32,7 +40,15 @@ interface PublicGatewayWorld {
   bodies?: readonly unknown[];
   pearlAbyssRequestsBefore?: number;
   gatewayEnv?: PublicGatewayEnv;
+  failure?: unknown;
 }
+
+const EVICTED_CLIENT = "198.51.100.30";
+const RATE_CHANGE_CLIENT = "198.51.100.31";
+const PREFLIGHT_CLIENT = "198.51.100.32";
+
+/** A query that never leaves the gateway, so a burst of it spends only the gateway's admission. */
+const TYPENAME_QUERY = "{ __typename }";
 
 const decodeCatalogEntitiesRequest = Schema.decodeUnknownSync(
   Schema.Struct({
@@ -66,6 +82,17 @@ const decodeRateLimitedBody = Schema.decodeUnknownSync(
           code: Schema.Literal("RATE_LIMITED"),
           scope: Schema.Literals(["client", "global"]),
         }),
+      }),
+    ]),
+  }),
+  STRICT,
+);
+const decodeAdmissionUnavailableBody = Schema.decodeUnknownSync(
+  Schema.Struct({
+    errors: Schema.Tuple([
+      Schema.Struct({
+        message: Schema.String,
+        extensions: Schema.Struct({ code: Schema.Literal("ADMISSION_UNAVAILABLE") }),
       }),
     ]),
   }),
@@ -325,6 +352,183 @@ const steps: readonly StepDefinition<PublicGatewayWorld>[] = [
     const body = decodeOneErrorBody(await response.json());
     assert.ok(body.errors.length > 0);
   }),
+  step(
+    "a public gateway that admits each client exactly {int} requests a minute",
+    integerStepArgument,
+    (world, limit) => {
+      world.gatewayEnv = exactlyAdmittingEnv({ ADMISSION_CLIENT_REQUESTS: String(limit) });
+    },
+  ),
+  step(
+    "a public gateway that admits the whole deployment exactly {int} requests a minute",
+    integerStepArgument,
+    (world, limit) => {
+      world.gatewayEnv = exactlyAdmittingEnv({ ADMISSION_GLOBAL_REQUESTS: String(limit) });
+    },
+  ),
+  step("one client sends {int} requests at once", integerStepArgument, async (world, count) => {
+    const gatewayEnv = requiredGatewayEnv(world);
+    world.responses = await Promise.all(
+      Array.from({ length: count }, () => fetchPublicGateway(typenamePost("198.51.100.20"), gatewayEnv)),
+    );
+  }),
+  step("{int} clients send one request each at once", integerStepArgument, async (world, count) => {
+    const gatewayEnv = requiredGatewayEnv(world);
+    world.responses = await Promise.all(
+      Array.from({ length: count }, (_, client) =>
+        fetchPublicGateway(typenamePost(`198.51.100.${100 + client}`), gatewayEnv),
+      ),
+    );
+  }),
+  step(
+    "two addresses in one IPv6 \\/64 send {int} requests each, one after the other",
+    integerStepArgument,
+    async (world, count) => {
+      const gatewayEnv = requiredGatewayEnv(world);
+      const responses: Response[] = [];
+      // The same /64, written once compressed and once in full.
+      for (const address of ["2001:db8:0:7::1", "2001:0db8:0000:0007:ffff::2"]) {
+        for (let request = 0; request < count; request += 1) {
+          responses.push(await fetchPublicGateway(typenamePost(address), gatewayEnv));
+        }
+      }
+      world.responses = responses;
+    },
+  ),
+  step(
+    "{int} requests are answered and {int} are answered 429 for the client scope with a Retry-After",
+    integerPairStepArguments,
+    (world, answered, refused) => assertAdmittedAndRefused(world, answered, refused, "client"),
+  ),
+  step(
+    "{int} requests are answered and {int} are answered 429 for the global scope with a Retry-After",
+    integerPairStepArguments,
+    (world, answered, refused) => assertAdmittedAndRefused(world, answered, refused, "global"),
+  ),
+  step("one client spends its allowance and its admission object is evicted", noStepArguments, async (world) => {
+    const gatewayEnv = requiredGatewayEnv(world);
+    await spendAllowance(gatewayEnv, EVICTED_CLIENT, 2);
+    // The runtime tears the object down, as it does to an idle one; only what it stored survives.
+    await evictDurableObject(admissionNamespace().getByName(admissionObjectName("client", EVICTED_CLIENT)));
+    world.responses = [await fetchPublicGateway(typenamePost(EVICTED_CLIENT), gatewayEnv)];
+  }),
+  step(
+    "one client spends its allowance and the deployment raises the limit to {int} requests a minute",
+    integerStepArgument,
+    async (world, limit) => {
+      await spendAllowance(requiredGatewayEnv(world), RATE_CHANGE_CLIENT, 2);
+      const raised = exactlyAdmittingEnv({ ADMISSION_CLIENT_REQUESTS: String(limit) });
+      world.responses = [await fetchPublicGateway(typenamePost(RATE_CHANGE_CLIENT), raised)];
+    },
+  ),
+  step(
+    "the client's next request is answered 429 for the client scope with a Retry-After",
+    noStepArguments,
+    async (world) => {
+      await assertExactlyRefused(requiredResponse(world, 0), "client");
+    },
+  ),
+  step("another client is still answered", noStepArguments, async (world) => {
+    const response = await fetchPublicGateway(typenamePost("198.51.100.21"), requiredGatewayEnv(world));
+    assert.equal(response.status, 200);
+  }),
+  step(
+    "a caller over the client rate limit requests the health path and the site's home page",
+    noStepArguments,
+    async (world) => {
+      const gatewayEnv = publicEnv({ CLIENT_RATE_LIMITER: limiter(false), ASSETS: staticSite() });
+      world.responses = await Promise.all(
+        [healthGet("203.0.113.9"), homeGet("203.0.113.9")].map((request) => fetchPublicGateway(request, gatewayEnv)),
+      );
+    },
+  ),
+  step("one client sends {int} CORS preflights and then a query", integerStepArgument, async (world, count) => {
+    const gatewayEnv = requiredGatewayEnv(world);
+    const responses: Response[] = [];
+    for (let request = 0; request < count; request += 1) {
+      responses.push(await fetchPublicGateway(preflight(PREFLIGHT_CLIENT), gatewayEnv));
+    }
+    responses.push(await fetchPublicGateway(typenamePost(PREFLIGHT_CLIENT), gatewayEnv));
+    world.responses = responses;
+  }),
+  step(
+    "the gateway answers both preflights 204 and the query 429 for the client scope with a Retry-After",
+    noStepArguments,
+    async (world) => {
+      const [first, second, query] = requiredResponses(world);
+      assert.ok(first && second && query);
+      assert.deepEqual([first.status, second.status], [204, 204]);
+      await assertExactlyRefused(query, "client");
+    },
+  ),
+  step("the client sends another CORS preflight", noStepArguments, async (world) => {
+    world.responses = [await fetchPublicGateway(preflight(PREFLIGHT_CLIENT), requiredGatewayEnv(world))];
+  }),
+  step("a caller over the client rate limit sends a CORS preflight", noStepArguments, async (world) => {
+    const gatewayEnv = publicEnv({ CLIENT_RATE_LIMITER: limiter(false) });
+    world.responses = [await fetchPublicGateway(preflight("203.0.113.9"), gatewayEnv)];
+  }),
+  step(
+    "the gateway answers it 204 allowing GET, POST and OPTIONS, for the browser not to remember",
+    noStepArguments,
+    (world) => {
+      const response = requiredResponse(world, 0);
+      assert.equal(response.status, 204);
+      assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+      assert.equal(response.headers.get("Access-Control-Allow-Methods"), "GET, POST, OPTIONS");
+      assert.match(response.headers.get("Access-Control-Allow-Headers") ?? "", /Content-Type/u);
+      // The browser asks again before its next request, so a preflight admitted later is not skipped.
+      assert.equal(response.headers.get("Access-Control-Max-Age"), "0");
+      assert.equal(response.headers.get("Retry-After"), null);
+    },
+  ),
+  step(
+    "the gateway answers each one 429 for the client scope with Retry-After 60 and the deploy guide",
+    noStepArguments,
+    async (world) => {
+      for (const response of requiredResponses(world)) await assertRateLimited(response, "client");
+    },
+  ),
+  step("a caller over its exact client allowance requests the health path", noStepArguments, async (world) => {
+    const gatewayEnv = exactlyAdmittingEnv({ ADMISSION_CLIENT_REQUESTS: "1" });
+    const first = await fetchPublicGateway(healthGet("203.0.113.10"), gatewayEnv);
+    assert.equal(first.status, 200);
+    world.responses = [await fetchPublicGateway(healthGet("203.0.113.10"), gatewayEnv)];
+  }),
+  step("the gateway answers each one 429 for the client scope with a Retry-After", noStepArguments, async (world) => {
+    for (const response of requiredResponses(world)) await assertExactlyRefused(response, "client");
+  }),
+  step("a caller sends a request to a public gateway whose admission object fails", noStepArguments, async (world) => {
+    const failing: NonNullable<PublicGatewayEnv["ADMISSION"]> = {
+      getByName: () => ({ fetch: () => Promise.reject(new Error("Durable Object overloaded")) }),
+    };
+    const gatewayEnv = publicEnv({ ADMISSION: failing, ADMISSION_CLIENT_REQUESTS: "3" });
+    world.responses = [await fetchPublicGateway(typenamePost("203.0.113.11"), gatewayEnv)];
+  }),
+  step("the gateway answers 503 with code ADMISSION_UNAVAILABLE and a Retry-After", noStepArguments, async (world) => {
+    const response = requiredResponse(world, 0);
+    assert.equal(response.status, 503);
+    assert.match(response.headers.get("Retry-After") ?? "", /^[1-9][0-9]*$/u);
+    assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+    decodeAdmissionUnavailableBody(await response.json());
+  }),
+  step(
+    "a caller sends a request to a public gateway that sets an exact limit but binds no admission object",
+    noStepArguments,
+    async (world) => {
+      try {
+        world.responses = [
+          await fetchPublicGateway(typenamePost("203.0.113.12"), publicEnv({ ADMISSION_CLIENT_REQUESTS: "3" })),
+        ];
+      } catch (error: unknown) {
+        world.failure = error;
+      }
+    },
+  ),
+  step("the request fails instead of being admitted", noStepArguments, (world) => {
+    assert.ok(world.failure instanceof TypeError, JSON.stringify(world.responses?.map(({ status }) => status)));
+    assert.match(world.failure.message, /ADMISSION/u);
+  }),
 ];
 
 const decodeIntrospectionBody = Schema.decodeUnknownSync(
@@ -460,6 +664,83 @@ async function readPearlAbyssObservation(): Promise<{ readonly distinct: number;
   const response = await observer.fetch("https://pa-observer.internal/");
   assert.equal(response.status, 200);
   return decodePearlAbyssObservation(await response.json());
+}
+
+/** A public gateway bound to the test Worker's real `GatewayAdmission` Durable Object, with the exact limits given. */
+function exactlyAdmittingEnv(limits: Partial<PublicGatewayEnv>): PublicGatewayEnv {
+  return publicEnv({ ADMISSION: admissionNamespace(), ...limits });
+}
+
+/** The test Worker's real `GatewayAdmission` namespace. */
+function admissionNamespace(): DurableObjectNamespace {
+  // SAFETY: The Vitest Miniflare configuration binds ADMISSION to the gateway's own GatewayAdmission class.
+  const admission = (env as Cloudflare.Env & { readonly ADMISSION?: DurableObjectNamespace }).ADMISSION;
+  assert.ok(admission, "The test Worker binds no ADMISSION namespace");
+  return admission;
+}
+
+/** Send `count` requests from one client, one after the other, and check that each was admitted. */
+async function spendAllowance(gatewayEnv: PublicGatewayEnv, clientAddress: string, count: number): Promise<void> {
+  for (let request = 0; request < count; request += 1) {
+    const response = await fetchPublicGateway(typenamePost(clientAddress), gatewayEnv);
+    assert.equal(response.status, 200);
+  }
+}
+
+function requiredGatewayEnv(world: PublicGatewayWorld): PublicGatewayEnv {
+  assert.ok(world.gatewayEnv);
+  return world.gatewayEnv;
+}
+
+function typenamePost(clientAddress: string): Request {
+  return new Request(`${ORIGIN}/graphql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "CF-Connecting-IP": clientAddress },
+    body: JSON.stringify({ query: TYPENAME_QUERY }),
+  });
+}
+
+function healthGet(clientAddress: string): Request {
+  return new Request(`${ORIGIN}/health`, { headers: { "CF-Connecting-IP": clientAddress } });
+}
+
+function homeGet(clientAddress: string): Request {
+  return new Request(`${ORIGIN}/`, { headers: { "CF-Connecting-IP": clientAddress } });
+}
+
+function preflight(clientAddress: string): Request {
+  return new Request(`${ORIGIN}/graphql`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://elsewhere.example",
+      "Access-Control-Request-Method": "POST",
+      "CF-Connecting-IP": clientAddress,
+    },
+  });
+}
+
+async function assertAdmittedAndRefused(
+  world: PublicGatewayWorld,
+  answered: number,
+  refused: number,
+  scope: "client" | "global",
+): Promise<void> {
+  const responses = requiredResponses(world);
+  const statuses = responses.map((response) => response.status);
+  assert.equal(statuses.filter((status) => status === 200).length, answered, JSON.stringify(statuses));
+  assert.equal(statuses.filter((status) => status === 429).length, refused, JSON.stringify(statuses));
+  for (const response of responses.filter(({ status }) => status === 429)) await assertExactlyRefused(response, scope);
+}
+
+/** An exact refusal: a 429 whose Retry-After is the whole seconds until the bucket admits one more request. */
+async function assertExactlyRefused(response: Response, scope: "client" | "global"): Promise<void> {
+  assert.equal(response.status, 429);
+  const retryAfter = response.headers.get("Retry-After") ?? "";
+  assert.match(retryAfter, /^[1-9][0-9]*$/u);
+  assert.ok(Number(retryAfter) <= 60, retryAfter);
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+  const body = decodeRateLimitedBody(await response.json());
+  assert.equal(body.errors[0].extensions.scope, scope);
 }
 
 function requiredResponses(world: PublicGatewayWorld): readonly Response[] {

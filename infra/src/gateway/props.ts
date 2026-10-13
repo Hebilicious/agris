@@ -12,8 +12,9 @@ function rateLimit(name: string, setting: RateLimitSetting) {
 
 /**
  * The public gateway's props in one stage: its `workers.dev` address and any hostname the stage adds, its rate
- * limiters, and its plain-text variables. A limit the stage turned off binds no limiter, and the gateway then limits
- * nothing there.
+ * limiters, and its plain-text variables, among them the exact `ADMISSION_*` limits its `GatewayAdmission` objects keep
+ * (`worker.ts` declares the class). A limit the stage turned off binds no limiter and sets no exact limit, and the
+ * gateway then limits nothing there.
  */
 export function gatewayProps(settings: DeploymentSettings) {
   return {

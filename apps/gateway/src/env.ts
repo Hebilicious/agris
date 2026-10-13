@@ -1,3 +1,5 @@
+import type { AdmissionNamespacePort } from "./admission.js";
+
 /**
  * The bindings the gateway Worker reads. A deployment configuration, this repository's or a host's, must provide them;
  * `infra/src/smoke/env.check.ts` proves the smoke stage, which deploys this entrypoint as a host does, provides them.
@@ -47,12 +49,31 @@ export interface AssetsPort {
  * The public gateway (`src/public.ts`): the private bindings plus the optional ones that shape a public deployment.
  * Every optional binding may be left out; the gateway then skips what it controls. It also reads the cache settings
  * and the `QUERY_*` limits (`QUERY_LIMIT_SETTING` in `@agris/core`), each optional.
+ *
+ * Every request, whatever its path, is admitted first: by the rate-limit bindings when bound, a cheap per-location
+ * first line, and then by the exact `ADMISSION_*` limits, which the `ADMISSION` Durable Object keeps.
  */
 export interface PublicGatewayEnv extends GatewayEnv {
-  /** Limits each client, keyed by `CF-Connecting-IP`; absent limits no client. */
+  /**
+   * Cheap first line per client, keyed by `CF-Connecting-IP` (an IPv6 address by its /64); absent limits no client
+   * here. Cloudflare counts it per location and approximately, so it is never the guarantee.
+   */
   readonly CLIENT_RATE_LIMITER?: RateLimitPort;
-  /** Limits the whole deployment under one constant key; absent sets no deployment-wide limit. */
+  /** Cheap first line for the whole deployment under one constant key, counted per location; absent sets none. */
   readonly GLOBAL_RATE_LIMITER?: RateLimitPort;
+  /**
+   * This Worker's own `GatewayAdmission` Durable Object class (`src/public.ts`), which keeps the exact limits. Required
+   * when either exact limit is set.
+   */
+  readonly ADMISSION?: AdmissionNamespacePort;
+  /** Exact requests per client per `ADMISSION_CLIENT_PERIOD_SECONDS`; absent or `"0"` sets no exact client limit. */
+  readonly ADMISSION_CLIENT_REQUESTS?: string;
+  /** The exact client limit's period in seconds; absent is 60. */
+  readonly ADMISSION_CLIENT_PERIOD_SECONDS?: string;
+  /** Exact requests for the whole deployment per `ADMISSION_GLOBAL_PERIOD_SECONDS`; absent or `"0"` sets none. */
+  readonly ADMISSION_GLOBAL_REQUESTS?: string;
+  /** The exact deployment-wide limit's period in seconds; absent is 60. */
+  readonly ADMISSION_GLOBAL_PERIOD_SECONDS?: string;
   /** Serves every path that is not `/graphql` or `/health`. */
   readonly ASSETS?: AssetsPort;
   /** When set, every response carries it as `X-Agris-Demo`. */

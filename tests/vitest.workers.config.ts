@@ -44,12 +44,14 @@ export default defineConfig({
   },
   plugins: [
     cloudflareTest({
-      // The public gateway under test, with the private `AgrisProxy` entrypoint beside it and a client rate limiter.
+      // The public gateway under test, with the private `AgrisProxy` entrypoint beside it, a client rate limiter, and
+      // its own exact admission object.
       main: "../apps/gateway/src/public.ts",
       miniflare: {
         compatibilityDate: "2026-08-24",
         compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
         bindings: { GRAPHIQL: "enabled" },
+        durableObjects: { ADMISSION: { className: "GatewayAdmission", useSQLite: true } },
         ratelimits: { CLIENT_RATE_LIMITER: { namespace_id: "42010", simple: { limit: 60, period: 60 } } },
         serviceBindings: {
           MARKET: { name: MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" },

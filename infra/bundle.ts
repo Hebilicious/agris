@@ -48,7 +48,10 @@ function hostWorker(main: string) {
 
 /** Every Worker by its logical ID. */
 const WORKERS = {
-  AgrisGateway: { props: gatewayProps(settings), entry: { kind: "effect" as const, exports: {} } },
+  AgrisGateway: {
+    props: gatewayProps(settings),
+    entry: { kind: "effect" as const, exports: { GatewayAdmission: durableObject } },
+  },
   AgrisGatewayCache: { props: gatewayCacheProps(settings), entry: { kind: "effect" as const, exports: {} } },
   AgrisMarket: {
     props: marketProps(settings),

@@ -103,21 +103,21 @@ Pearl Abyss returns one ambiguous answer for both "unknown item" and "no market 
 
 ## Limits
 
-| Limit                              | Value                                                        |
-| ---------------------------------- | ------------------------------------------------------------ |
-| Request body                       | 64 KiB                                                       |
-| Response body                      | 1 MiB                                                        |
-| Document depth                     | 8 levels of fields, fragments expanded                       |
-| Fields per document                | 150, fragments expanded                                      |
-| Aliases per document               | 15                                                           |
-| Subrequests per request            | 50 (the invocation budget, `SUBREQUEST_LIMIT`)               |
-| Items per summary batch            | 100 distinct                                                 |
-| Summary batches per request        | 6 distinct                                                   |
-| `searchItems.first`                | 1 to 100                                                     |
-| Rate limit, self-hosted gateway    | none                                                         |
-| Rate limit, shared demo            | 10 per minute per IP, 120 per minute per Cloudflare location |
-| Pearl Abyss concurrency (per host) | 6 active requests, up to 100 more queued                     |
-| Pearl Abyss request timeout        | 30 seconds, time waiting in the queue included               |
+| Limit                              | Value                                              |
+| ---------------------------------- | -------------------------------------------------- |
+| Request body                       | 64 KiB                                             |
+| Response body                      | 1 MiB                                              |
+| Document depth                     | 8 levels of fields, fragments expanded             |
+| Fields per document                | 150, fragments expanded                            |
+| Aliases per document               | 15                                                 |
+| Subrequests per request            | 50 (the invocation budget, `SUBREQUEST_LIMIT`)     |
+| Items per summary batch            | 100 distinct                                       |
+| Summary batches per request        | 6 distinct                                         |
+| `searchItems.first`                | 1 to 100                                           |
+| Rate limit, self-hosted gateway    | none                                               |
+| Rate limit, shared demo            | 10 per minute per IP, 120 per minute in all, exact |
+| Pearl Abyss concurrency (per host) | 6 active requests, up to 100 more queued           |
+| Pearl Abyss request timeout        | 30 seconds, time waiting in the queue included     |
 
 These are the defaults. A deployment can change or turn off the depth, field and alias limits (`QUERY_MAX_*`), turn on or change both rate limits, change the Pearl Abyss concurrency, and change the subrequest budget; [deploy.md](deploy.md#configuration) lists every setting.
 
