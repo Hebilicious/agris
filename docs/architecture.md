@@ -110,9 +110,11 @@ Summary reads are batched: every `marketSummary` at the same query path, and eve
 Every upstream call goes through the `PearlAbyssCoordinator` Durable Object, one instance per upstream host, created next to that host's server: each region's coordinator is named `<hint>:<host>` and created with that Durable Object location hint (`PEARL_ABYSS_COORDINATOR_LOCATIONS` in `apps/market/src/market.ts`; [deploy.md](deploy.md#upstream-pearl-abyss) explains how the hints were measured). Inside it:
 
 - identical requests that are pending at the same time share one fetch;
-- at most `PA_MAX_CONCURRENT_REQUESTS` (default 6) distinct requests run at once, and the rest wait in FIFO order; `0` or no setting runs them all at once;
-- a rate-limit binding (default 100 per 10 seconds) acts as a burst backstop; a denied or failed limiter call means no fetch, and a deployment without the binding sets no rate;
-- a request that times out after 30 seconds is not retried;
+- each distinct request first asks the rate-limit binding (default 100 per 10 seconds), a burst backstop, for a permit before it waits for a slot; a denied or failed permit, or one that has not come within 5 seconds, means no fetch, and a deployment without the `PA_RATE_LIMITER` binding sets no rate;
+- at most `PA_MAX_CONCURRENT_REQUESTS` (default 6) distinct requests run at once, and up to 100 more wait in FIFO order; one past that fails at once as `upstream/queue-full` without reaching Pearl Abyss; `0` or no setting sets no concurrency limit of its own, and the coordinator then runs at most 1,000 at once, so the work it holds stays bounded;
+- pending requests are keyed by the SHA-256 of their URL and body, so a waiting entry holds a digest, and only the first caller of a key leaves its body with the coordinator;
+- a caller that gives up stops only its own wait; the request leaves the queue, or its upstream call is cancelled, once every caller sharing it has given up. The Workers run with the `enable_request_signal` compatibility flag, without which the coordinator would never hear that a caller left. A request every caller left still counts against the queue until its work has stopped;
+- each distinct request has 30 seconds from its arrival at the coordinator, its permit and its wait for a slot included; past that it leaves the queue, or its upstream call is cancelled, and it fails as timed out. It is not retried;
 - upstream responses are read with a byte ceiling and rejected if their shape is unexpected.
 
 The coordinator holds no queue on disk and no results after they settle; it is not a cache. If it restarts, in-flight callers fail and the gateway's stale cache covers them.

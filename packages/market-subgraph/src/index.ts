@@ -204,6 +204,7 @@ function readErrorAsQueryError(error: unknown): unknown {
           "markets, items or categories in one query.",
         "QUERY_BUDGET_EXCEEDED",
       );
+    case "upstream/queue-full":
     case "upstream/rate-limited":
       return marketError(
         `The Central Market is being read too often. Retry after ${PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS} seconds.`,

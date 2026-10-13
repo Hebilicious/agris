@@ -30,9 +30,12 @@ const PEARL_ABYSS_COORDINATOR = "PearlAbyssCoordinator";
  * with the location hint its name carries (`pearlAbyssCoordinatorAddress`), so its calls start next to the Pearl Abyss
  * server that answers them.
  *
- * It answers `fetch`, so the upstream request arrives with the caller's signal and a caller that gives up cancels the
- * coordinator's upstream request too. It reads `PA_MAX_CONCURRENT_REQUESTS` and, when bound, `PA_RATE_LIMITER` from the
- * market Worker's environment, which `props.ts` declares.
+ * It answers `fetch`, and the stack's `enable_request_signal` flag (`compatibility()` in `stack.ts`) makes each
+ * request's signal abort when its caller goes away: that caller stops its own wait, and the request leaves the queue,
+ * or its upstream call is cancelled, once every caller sharing it has given up. Whether or not anyone is still
+ * waiting, each distinct request has `PEARL_ABYSS_REQUEST_TIMEOUT_MS` from its arrival before the coordinator drops it,
+ * and each permit `PEARL_ABYSS_PERMIT_TIMEOUT_MS` before it counts as refused. It reads `PA_MAX_CONCURRENT_REQUESTS`
+ * and, when bound, `PA_RATE_LIMITER` from the market Worker's environment, which `props.ts` declares.
  */
 export class PearlAbyssCoordinator extends Cloudflare.DurableObject<PearlAbyssCoordinator>()(
   PEARL_ABYSS_COORDINATOR,
@@ -41,10 +44,10 @@ export class PearlAbyssCoordinator extends Cloudflare.DurableObject<PearlAbyssCo
     const env: Record<string, unknown> | undefined = yield* Cloudflare.Workers.WorkerEnvironment;
     return Effect.sync(() => {
       if (env === undefined) throw new TypeError("The coordinator ran without the market Worker's environment.");
-      const coordination = new PearlAbyssCoordination(
-        maximumConcurrentRequestsFromBinding(env.PA_MAX_CONCURRENT_REQUESTS),
-        rateLimiterOf(env.PA_RATE_LIMITER),
-      );
+      const coordination = new PearlAbyssCoordination({
+        maximumConcurrentRequests: maximumConcurrentRequestsFromBinding(env.PA_MAX_CONCURRENT_REQUESTS),
+        limiter: rateLimiterOf(env.PA_RATE_LIMITER),
+      });
       return {
         fetch: Effect.gen(function* () {
           const request = nativeRequest(yield* HttpServerRequest);

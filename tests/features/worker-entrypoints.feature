@@ -38,3 +38,10 @@ Feature: Central Market Worker entrypoints
     When the local gateway reads an item's NA and EU market summaries with SUBREQUEST_LIMIT 3 and CACHE_NEVER_STORED naming Item.marketSummary
     Then one summary has data and the other reports QUERY_BUDGET_EXCEEDED
     And the answer is never stored
+
+  @scenario:worker-entrypoints-caller-abort-reaches-coordinator @provenance:spec @i0
+  Scenario: A market read whose caller gives up leaves the coordinator's queue unsent
+    Given a market Worker whose coordinator runs one Pearl Abyss request at once while Pearl Abyss holds the first
+    When a second market read waits behind it and its caller gives up
+    And the first is released and a third market read follows
+    Then only the first and the third market reads reached Pearl Abyss

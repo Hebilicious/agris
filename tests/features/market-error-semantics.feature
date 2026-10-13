@@ -30,6 +30,14 @@ Feature: Market error semantics
     When a caller asks the gateway for the EU summary of item 10006
     Then the gateway answers 429 with Retry-After 1
 
+  @scenario:coordinator-queue-full-is-429 @provenance:spec @i0
+  Scenario: A query refused by a full Pearl Abyss coordinator queue answers 429 with Retry-After
+    Given every Pearl Abyss coordinator's queue is full
+    When a caller asks the gateway for the EU summary of item 10006
+    Then the gateway answers 429 with Retry-After 60
+    And the answer's only error is RATE_LIMITED at the market items
+    And the answer is not stored
+
   @scenario:pearl-abyss-throttle-beside-catalog-data @provenance:spec @i0
   Scenario: A throttled market read next to catalog data keeps the catalog data
     Given the Pearl Abyss rate limiter refuses every request

@@ -35,6 +35,7 @@ export const PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS = 60;
 export type PearlAbyssUpstreamErrorCode =
   | "upstream/budget-exceeded"
   | "upstream/invalid-response"
+  | "upstream/queue-full"
   | "upstream/rate-limited"
   | "upstream/timeout"
   | "upstream/unavailable";
@@ -85,8 +86,8 @@ export interface PearlAbyssMarketReaderInput {
 
 /**
  * How one distinct Pearl Abyss read ended: it `succeeded`; it `failed` to arrive (unreachable, an unsuccessful status,
- * a timeout or an unreadable answer); it was `rate-limited` by a limiter in front of Pearl Abyss; or it was `refused`
- * by the invocation budget before anything was sent. Only `failed` says anything about Pearl Abyss itself.
+ * a timeout or an unreadable answer); it was `rate-limited` by a limiter in front of Pearl Abyss or a full coordinator
+ * queue; or it was `refused` by the invocation budget before anything was sent. Only `failed` says anything about Pearl Abyss itself.
  */
 export type PearlAbyssRequestSettlement = "succeeded" | "failed" | "rate-limited" | "refused";
 
@@ -347,7 +348,7 @@ function failedSettlement(error: unknown): Exclude<PearlAbyssRequestSettlement, 
   if (error instanceof MarketSummaryBudgetExceededError) return "refused";
   if (error instanceof PearlAbyssUpstreamError) {
     if (error.code === "upstream/budget-exceeded") return "refused";
-    if (error.code === "upstream/rate-limited") return "rate-limited";
+    if (error.code === "upstream/rate-limited" || error.code === "upstream/queue-full") return "rate-limited";
   }
   return "failed";
 }

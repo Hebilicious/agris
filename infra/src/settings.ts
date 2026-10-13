@@ -59,7 +59,7 @@ export interface DeploymentSettings {
   readonly globalRateLimit: RateLimitSetting | null;
   /** `PA_RATE_LIMITER` on the market Worker, the burst backstop on Pearl Abyss calls; `null` binds none. */
   readonly pearlAbyssRateLimit: RateLimitSetting | null;
-  /** `PA_MAX_CONCURRENT_REQUESTS`: distinct Pearl Abyss requests at once, per host; `0` sets no limit. */
+  /** `PA_MAX_CONCURRENT_REQUESTS`: distinct Pearl Abyss requests at once, per host; `0` sets no limit of its own. */
   readonly pearlAbyssConcurrency: number;
   /**
    * `SUBREQUEST_LIMIT`: each Worker's `limits.subrequests`, and the budget one request's execution spends within it.
