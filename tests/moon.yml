@@ -1,0 +1,75 @@
+language: "typescript"
+layer: "automation"
+stack: "backend"
+
+project:
+  title: "Agris Tests"
+  description: "Executable Gherkin evidence for the Agris graph, its packages and its Workers."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# The evidence imports the packages and Workers it proves, and the item-name search evidence imports the catalog
+# subgraph's compiled output, so every task depends on the upstream builds and type checks.
+tasks:
+  typecheck:
+    description: "Type-check the headless and integration evidence."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:build", "^:typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "tsconfig.json", "package.json", "@group(agris-sources)"]
+
+  workers-typecheck:
+    description: "Type-check the gateway and market Worker runtime evidence."
+    command: "tsc"
+    args: ["-p", "tsconfig.workers.json"]
+    deps: ["^:typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "tsconfig.workers.json", "package.json", "@group(agris-sources)"]
+
+  catalog-worker-typecheck:
+    description: "Type-check the catalog Worker runtime evidence."
+    command: "tsc"
+    args: ["-p", "tsconfig.catalog-worker.json"]
+    deps: ["^:typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "tsconfig.catalog-worker.json", "package.json", "@group(agris-sources)"]
+
+  test-headless:
+    description: "Run the headless Feature evidence: market semantics, Pearl Abyss transport, request safety and catalog search."
+    command: "vitest"
+    args: ["run", "--config", "vitest.headless.config.ts"]
+    deps: ["typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json", "@group(agris-sources)"]
+
+  test-integration:
+    description: "Run the federated graph's Node integration Feature evidence."
+    command: "vitest"
+    args: ["run", "--config", "vitest.integration.config.ts"]
+    deps: ["typecheck"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json", "@group(agris-sources)"]
+
+  # The market and catalog entrypoints run as `infra:bundle` bundles them (`HostMarket`, `HostCatalog`), the bundles the
+  # smoke stage deploys.
+  test-workers:
+    description: "Run the real gateway and market entrypoints together in the Cloudflare Workers runtime."
+    command: "vitest"
+    args: ["run", "--config", "vitest.workers.config.ts"]
+    deps: ["workers-typecheck", "infra:bundle"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json", "@group(agris-sources)"]
+    options:
+      cache: false
+      mutex: "workers-runtime"
+
+  test-catalog-worker:
+    description: "Run the production catalog Worker entrypoint against its bundled immutable artifact."
+    command: "vitest"
+    args: ["run", "--config", "vitest.catalog-worker.config.ts"]
+    deps: ["catalog-worker-typecheck", "infra:bundle"]
+    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json", "@group(agris-sources)"]
+    options:
+      cache: false
+      mutex: "workers-runtime"
+
+  test:
+    description: "Run every local test suite: headless, integration and Workers runtime evidence."
+    command: "noop"
+    deps: ["test-headless", "test-integration", "test-workers", "test-catalog-worker"]

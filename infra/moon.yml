@@ -1,0 +1,126 @@
+language: "typescript"
+layer: "automation"
+stack: "backend"
+
+project:
+  title: "Agris Infra"
+  description: "Deploys Agris as one Alchemy stack: the docs site, the hosted demo, and any self-hosted stage."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+fileGroups:
+  sources:
+    - "alchemy.run.ts"
+    - "bundle.ts"
+    - "src/**/*"
+  configs:
+    - "tsconfig.json"
+    - "package.json"
+
+# Every deploy changes a live Cloudflare account: run one only when its owner asks. A deploy reads the account from
+# `CLOUDFLARE_ACCOUNT_ID` and signs in with `CLOUDFLARE_API_TOKEN` or an Alchemy profile; Alchemy keeps the stack's
+# state in the account's own state-store Worker, so nothing about the account is written to the repository.
+tasks:
+  typecheck:
+    description: "Type-check the Alchemy stack, its Workers and the bundler."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:typecheck"]
+    inputs: ["@group(sources)", "@group(configs)", "@group(agris-sources)"]
+
+  bundle:
+    description: "Bundle every Worker the stack deploys as Alchemy's deploy does, the smoke stage's included, without a Cloudflare account."
+    command: "node"
+    args: ["bundle.ts", "../.artifacts/alchemy-bundles"]
+    deps: ["typecheck"]
+    inputs: ["@group(sources)", "@group(configs)", "@group(agris-sources)", "/tools/smoke/caller/**/*"]
+    outputs: ["/.artifacts/alchemy-bundles/**/*"]
+
+  dev:
+    description: "Run the `local` stage's four Workers on this machine with `alchemy dev`: the gateway on port 8790, the market on 8791, the catalog on 8792 and the cache Worker on 8793. It needs no Cloudflare account."
+    command: "alchemy"
+    args: ["dev", "alchemy.run.ts", "--stage", "local"]
+    deps: ["typecheck"]
+    preset: "server"
+
+  deploy:
+    description: "Deploy a self-hosted Agris: the `production` stage, configured from this command's environment."
+    tags: ["external-mutation"]
+    command: "alchemy"
+    args: ["deploy", "alchemy.run.ts", "--stage", "production", "--yes"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      interactive: true
+
+  plan:
+    description: "Show what deploying the self-hosted `production` stage would create, change or delete, without applying it."
+    tags: ["external-state"]
+    command: "alchemy"
+    args: ["plan", "alchemy.run.ts", "--stage", "production"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  destroy:
+    description: "Delete the self-hosted `production` stage's Workers."
+    tags: ["external-mutation"]
+    command: "alchemy"
+    args: ["destroy", "alchemy.run.ts", "--stage", "production"]
+    options:
+      cache: false
+      runInCI: "skip"
+      interactive: true
+
+  smoke-deploy:
+    description: "Deploy the cache smoke's `smoke` stage: the Workers' own entrypoints as a host deploys them, and a public caller bound to the private gateway."
+    tags: ["external-mutation"]
+    command: "alchemy"
+    args: ["deploy", "alchemy.run.ts", "--stage", "smoke", "--yes"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  smoke-url:
+    description: "Print the deployed `smoke` stage's output: the caller's address, which the cache smoke calls."
+    tags: ["external-state"]
+    command: "alchemy"
+    args: ["state", "read", "Agris/smoke/output", "--no-input"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  smoke-destroy:
+    description: "Delete the `smoke` stage's Workers."
+    tags: ["external-mutation"]
+    command: "alchemy"
+    args: ["destroy", "alchemy.run.ts", "--stage", "smoke", "--yes"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  demo-deploy:
+    description: "Deploy the maintainer's shared demo API (`agris-demo`): GraphQL, GraphiQL and /health, heavily rate-limited."
+    tags: ["external-mutation"]
+    command: "alchemy"
+    args: ["deploy", "alchemy.run.ts", "--stage", "demo", "--yes"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      interactive: true
+
+  docs-deploy:
+    description: "Deploy the built website (`website/dist`) as the assets-only `agris-docs` Worker; `moon run agris:docs-deploy` builds it first."
+    tags: ["external-mutation"]
+    command: "alchemy"
+    args: ["deploy", "alchemy.run.ts", "--stage", "docs", "--yes"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"
+      interactive: true

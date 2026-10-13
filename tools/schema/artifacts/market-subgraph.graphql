@@ -1,0 +1,292 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@extends", "@key"])
+
+"""A time in UTC, in RFC 3339 format, such as 2026-08-23T00:00:00.000Z."""
+scalar DateTime
+
+"""An item on a region's hot list, with its price change."""
+type HotMarketItem {
+  """The item's market data."""
+  marketItem: MarketItem!
+  """Which way the price is moving."""
+  direction: PriceDirection!
+  """How much the price changed, in silver."""
+  amount: SafeInteger!
+}
+
+type Item @key(fields: "id locale") @extends {
+  id: ID!
+  locale: ItemLocale!
+  """
+  The item's market numbers in one region. Null when they could not be read; the error says why.
+  """
+  marketSummary(
+    """The region."""
+    region: MarketRegion!
+  ): MarketItemSummary
+}
+
+"""
+A language for item names. Prices and counts are the same in every language.
+"""
+enum ItemLocale {
+  """English."""
+  EN
+  """German."""
+  DE
+  """French."""
+  FR
+  """European Spanish."""
+  ES_EU
+  """Latin American Spanish."""
+  ES
+  """Japanese."""
+  JA
+  """Korean."""
+  KO
+  """Portuguese."""
+  PT
+  """Russian."""
+  RU
+  """Thai."""
+  TH
+  """Turkish."""
+  TR
+  """Traditional Chinese, as used in Taiwan."""
+  ZH_TW
+}
+
+"""One region's Central Market, with item names in one language."""
+type Market {
+  """The market's region."""
+  region: MarketRegion!
+  """The language of item names."""
+  locale: ItemLocale!
+  """
+  When this market's data was read, in UTC, which tells you how old the answer is.
+  """
+  observedAt: DateTime!
+  """
+  The given items, in the order given, duplicates included. Null when they could not be read; the error says why.
+  """
+  items(
+    """Item IDs: positive whole numbers, as strings."""
+    ids: [ID!]!
+  ): [MarketItem!]
+  """
+  Every item listed in a category, ordered by item ID. Null when it could not be read; the error says why.
+  """
+  catalog(
+    """The category to list. Omit it for every category."""
+    category: MarketCategoryInput
+  ): [MarketItem!]
+  """
+  The region's hot items. Null when they could not be read; the error says why.
+  """
+  hotItems: [HotMarketItem!]
+  """
+  The items waiting in the region's registration queue to be listed. Null when it could not be read; the error says why.
+  """
+  registrations: [MarketRegistration!]
+}
+
+"""
+The Central Market category an item is listed under, by its numeric codes.
+"""
+type MarketCategory {
+  """The main category code."""
+  main: Int!
+  """The subcategory code. Null when not known."""
+  sub: Int
+}
+
+"""A Central Market category, by its numeric codes."""
+input MarketCategoryInput {
+  """The main category code, such as 1, 5 or 10."""
+  main: Int!
+  """
+  The subcategory code within `main`. Omit it for every subcategory of `main`.
+  """
+  sub: Int
+}
+
+"""One item on one region's market."""
+type MarketItem {
+  """The item, named in the market's language."""
+  item: Item!
+  """
+  Whether the market has data for the item. False both for an item that is not listed and for an unknown ID.
+  """
+  isListed: Boolean!
+  """
+  The category the item is listed under. Null except for items from `Market.catalog`.
+  """
+  category: MarketCategory
+  """The item's base price, in silver. Null when `isListed` is false."""
+  basePrice: SafeInteger
+  """How many units are for sale now. Null when `isListed` is false."""
+  currentStock: SafeInteger
+  """
+  How many units have been traded in total. Null when `isListed` is false.
+  """
+  totalTrades: SafeInteger
+  """
+  The item's listings, one row per range of enhancement levels. Null when they could not be read; the error says why.
+  """
+  listings: [MarketListing!]
+  """
+  The buy and sell orders at one enhancement level, one entry per price. Null when they could not be read; the error says why.
+  """
+  orderBook(
+    """The enhancement level to read, from 0 to 20; 0 is unenhanced."""
+    enhancementLevel: Int! = 0
+  ): [MarketOrder!]
+  """
+  The item's last 90 prices at one enhancement level, in silver, oldest first. Null when they could not be read; the error says why.
+  """
+  priceHistory(
+    """The enhancement level to read, from 0 to 20; 0 is unenhanced."""
+    enhancementLevel: Int! = 0
+  ): [MarketPricePoint!]
+}
+
+"""An item's headline market numbers in one region."""
+type MarketItemSummary {
+  """The region these numbers are for."""
+  region: MarketRegion!
+  """When these numbers were read from the market, in UTC."""
+  observedAt: DateTime!
+  """
+  Whether the market has data for the item. False both for an item that is not listed and for an unknown ID.
+  """
+  isListed: Boolean!
+  """The item's base price, in silver. Null when `isListed` is false."""
+  basePrice: SafeInteger
+  """How many units are for sale now. Null when `isListed` is false."""
+  currentStock: SafeInteger
+  """
+  How many units have been traded in total. Null when `isListed` is false.
+  """
+  totalTrades: SafeInteger
+}
+
+"""One row of an item's listings, covering a range of enhancement levels."""
+type MarketListing {
+  """The lowest enhancement level this row covers, from 0 to 20."""
+  minimumEnhancementLevel: Int!
+  """The highest enhancement level this row covers, from 0 to 20."""
+  maximumEnhancementLevel: Int!
+  """The base price, in silver."""
+  basePrice: SafeInteger!
+  """How many units in this range are for sale now."""
+  currentStock: SafeInteger!
+  """How many units in this range have been traded in total."""
+  totalTrades: SafeInteger!
+  """The lowest price the market allows for this range, in silver."""
+  minimumPrice: SafeInteger!
+  """The highest price the market allows for this range, in silver."""
+  maximumPrice: SafeInteger!
+  """The most recent sale in this range. Null when no sale is recorded."""
+  lastSale: MarketSale
+}
+
+"""One price level of an item's order book."""
+type MarketOrder {
+  """The price level, in silver."""
+  price: SafeInteger!
+  """How many units are offered for sale at this price."""
+  sellOrders: SafeInteger!
+  """How many units buyers have ordered at this price."""
+  buyOrders: SafeInteger!
+}
+
+"""
+One price in an item's price history. The market gives no dates, only the order of the prices.
+"""
+type MarketPricePoint {
+  """
+  How many prices before the newest this one is: 0 is the newest, 89 the oldest.
+  """
+  offsetFromLatest: Int!
+  """The price, in silver."""
+  price: SafeInteger!
+}
+
+"""
+A Central Market region. Each region has its own prices, stock and orders.
+"""
+enum MarketRegion {
+  """Europe (PC)."""
+  EU
+  """North America (PC)."""
+  NA
+  """Asia (PC), shared by South East Asia and Thailand."""
+  ASIA
+  """Middle East and North Africa (PC)."""
+  MENA
+  """Korea (PC)."""
+  KR
+  """Russia (PC)."""
+  RU
+  """Japan (PC)."""
+  JP
+  """Taiwan (PC)."""
+  TW
+  """South America (PC)."""
+  SA
+  """Europe (console)."""
+  CONSOLE_EU
+  """North America (console)."""
+  CONSOLE_NA
+  """Asia (console)."""
+  CONSOLE_ASIA
+}
+
+"""An item waiting in a region's registration queue to be listed."""
+type MarketRegistration {
+  """The item, named in the market's language."""
+  item: Item!
+  """The enhancement level being registered, from 0 to 20."""
+  enhancementLevel: Int!
+  """The registered price, in silver."""
+  price: SafeInteger!
+  """The queue entry's time, in Unix seconds."""
+  timestamp: SafeInteger!
+  """The queue entry's time, in UTC."""
+  registeredAt: DateTime!
+}
+
+"""The most recent sale in a listing row."""
+type MarketSale {
+  """The sale price, in silver."""
+  price: SafeInteger!
+  """When it sold, in Unix seconds."""
+  timestamp: SafeInteger!
+  """When it sold, in UTC. Null when `timestamp` is 0."""
+  occurredAt: DateTime
+}
+
+"""Which way a hot item's price is moving."""
+enum PriceDirection {
+  """The price is rising."""
+  UP
+  """The price is falling."""
+  DOWN
+  """The direction is not known."""
+  UNKNOWN
+}
+
+"""Read-only queries over the Central Market and the item catalog."""
+type Query {
+  """One region's Central Market."""
+  market(
+    """The region."""
+    region: MarketRegion!
+    """The language for item names."""
+    locale: ItemLocale! = EN
+  ): Market!
+}
+
+"""
+A whole number from 0 to 9007199254740991 (2^53 - 1), sent as a JSON number. Used for silver amounts and counts too large for Int.
+"""
+scalar SafeInteger

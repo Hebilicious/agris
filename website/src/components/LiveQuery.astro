@@ -1,0 +1,80 @@
+---
+// A query a reader can run from the page: a Run button beside the actions passed in as children, and the result panel
+// under them, or on a wide screen beside the card's query. `src/live/panel.ts` sends the query to the shared demo and
+// draws the answer.
+import { DEMO, type Rate } from "../facts.ts";
+import { DEMO_GRAPHQL } from "../site.ts";
+import Icon from "./Icon.astro";
+
+interface Props {
+  /** The query, sent as it is written. */
+  query: string;
+  /** Unique on the page; names the panel's elements. */
+  id: string;
+  /** What the query asks, for the panel's accessible name. */
+  label: string;
+}
+
+const { query, id, label } = Astro.props;
+// How long a refused visitor waits, when the demo limits visitors at all.
+const demoClientLimit: Rate | null = DEMO.clientRateLimit;
+const panelId = `live-${id}`;
+const bodyId = `live-${id}-body`;
+---
+
+<div
+  class="live"
+  data-live-query
+  data-state="closed"
+  data-expanded="false"
+  data-query={query}
+  data-endpoint={DEMO_GRAPHQL}
+  data-retry-after={demoClientLimit?.period}
+>
+  <div class="live-actions">
+    <button type="button" class="button small primary live-run" data-live-run aria-controls={panelId}>
+      <span class="live-run-icon" aria-hidden="true">
+        <Icon name="play" size={15} class="icon-fill live-play" />
+        <span class="live-spinner"></span>
+      </span>
+      Run query
+    </button>
+    <slot />
+  </div>
+  <!-- Plain elements with roles: the page styles every section and every header's paragraph. -->
+  <div class="live-panel" id={panelId} data-live-panel role="region" aria-label={`Result: ${label}`} hidden>
+    <div class="live-head">
+      <p class="live-summary" data-live-summary role="status"></p>
+      <div class="live-tools">
+        <button type="button" class="copy" data-live-copy data-copy="" aria-label="Copy the result JSON" hidden
+          >Copy</button
+        >
+        <button
+          type="button"
+          class="live-tool live-toggle"
+          data-live-toggle
+          aria-controls={bodyId}
+          aria-expanded="true"
+          aria-label="Collapse the result"
+        >
+          <Icon name="chevron" size={16} />
+        </button>
+        <button type="button" class="live-tool" data-live-close aria-label="Close the result">
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+    </div>
+    <div class="live-body" id={bodyId} data-live-body>
+      <div class="live-note" data-live-note hidden></div>
+      <dl class="live-meta" data-live-meta hidden></dl>
+      <pre class="live-well" data-live-well tabindex="0" aria-label="Response JSON" hidden><code data-live-json></code></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  import "../scripts/copy-buttons.ts";
+  import { mountLiveQuery } from "../live/panel.ts";
+
+  for (const root of document.querySelectorAll<HTMLElement>("[data-live-query]")) mountLiveQuery(root);
+</script>

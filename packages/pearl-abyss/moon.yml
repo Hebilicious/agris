@@ -1,0 +1,28 @@
+language: "typescript"
+layer: "library"
+stack: "backend"
+
+project:
+  title: "Pearl Abyss Client"
+  description: "Owns the typed Pearl Abyss Central Market client, region and locale descriptors, and request coordination."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Inputs stay inside this project so it works unchanged when the repository is mounted inside another workspace.
+# Upstream packages reach this project's hashes through `^:` dependencies.
+tasks:
+  typecheck:
+    description: "Type-check the pearl abyss client package."
+    command: "tsc"
+    args: ["-p", "tsconfig.json", "--noEmit"]
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json", "@group(agris-sources)"]
+
+  build:
+    description: "Compile the pearl abyss client package for the Node tools that run its output."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:build"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json", "@group(agris-sources)"]
+    outputs: ["dist/**/*"]

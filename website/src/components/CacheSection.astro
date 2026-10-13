@@ -1,0 +1,252 @@
+---
+// The page's Cache section: what the edge cache does in three short points, every cache setting with its default and
+// the shared demo's value, and how to see the cache at work. Every time is read from the deployment facts when the site
+// is built; the words around them are written here.
+import { CACHE_SETTING, COORDINATE_CACHE_SETTINGS } from "@agris/core/cache-freshness";
+
+import { DEMO, SELF_HOSTED, type CacheFreshnessPolicy } from "../facts.ts";
+import { durationOf } from "../figure/model.ts";
+import SettingVariable from "./SettingVariable.astro";
+import Snippet from "./Snippet.astro";
+
+/** How long a policy keeps an answer that selects one field, raised to its floor. */
+interface Window {
+  readonly fresh: number;
+  readonly stale: number;
+}
+
+/** The window a policy gives answers that select `coordinate`, or `null` when it never caches them. */
+function windowOf(policy: CacheFreshnessPolicy, coordinate: string): Window | null {
+  const window = policy.coordinates[coordinate];
+  if (!policy.enabled || policy.neverStored.includes(coordinate) || window === undefined) return null;
+  if (window.maxAgeSeconds === 0) return null;
+  return {
+    fresh: Math.max(window.maxAgeSeconds, policy.minimumSeconds),
+    stale: Math.max(window.staleWhileRevalidateSeconds, policy.minimumSeconds),
+  };
+}
+
+const own = SELF_HOSTED.cacheFreshness;
+const demo = DEMO.cacheFreshness;
+
+/** The two variables that set `coordinate`'s window, as the gateway names them. */
+function settingsOf(coordinate: string) {
+  const settings = COORDINATE_CACHE_SETTINGS.find((setting) => setting.coordinate === coordinate);
+  if (settings === undefined) throw new TypeError(`The cache section lists ${coordinate}, which has no cache settings.`);
+  return settings;
+}
+
+/** How long a self-hosted gateway keeps `coordinate` fresh by default. The build fails if the copy quotes a field it never caches. */
+function defaultFreshness(coordinate: string): number {
+  const window = windowOf(own, coordinate);
+  if (window === null) throw new TypeError(`The cache section quotes ${coordinate}, which a default gateway never caches.`);
+  return window.fresh;
+}
+
+/** A duration for prose, its number and unit kept on one line. */
+const time = (seconds: number) => durationOf(seconds).replace(" ", "\u00a0");
+
+const orderBooks = defaultFreshness("MarketItem.orderBook");
+const prices = defaultFreshness("Market.items");
+const names = defaultFreshness("Query.items");
+const namesWithPrices = Math.min(names, defaultFreshness("Item.marketSummary"));
+
+const points = [
+  {
+    title: "Each field has a default",
+    text: `Order books stay fresh for ${time(orderBooks)}, prices for ${time(prices)} and item names for ${time(names)}.`,
+  },
+  {
+    title: "The shortest one wins",
+    text: `Ask for item names and their prices in one query, and the answer is cached for ${time(namesWithPrices)}, the shorter of the two.`,
+  },
+  {
+    title: "Old answers fill the gaps",
+    text:
+      own.staleIfErrorSeconds > 0
+        ? `When an answer expires, the cache keeps serving it while a new one loads. If Pearl Abyss is down, the last good answer is served for up to ${time(own.staleIfErrorSeconds)}.`
+        : "When an answer expires, the cache keeps serving it while a new one loads, so nobody waits on Pearl Abyss.",
+  },
+];
+
+/** `On` or `Off`; a duration, where `0` reads as `Off`. */
+const onOff = (enabled: boolean) => (enabled ? "On" : "Off");
+const secondsOrOff = (seconds: number) => (seconds === 0 ? "Off" : durationOf(seconds));
+
+/** Settings that apply to every answer: the switch, the outage window and the floor. */
+const wholeCache = [
+  { variable: CACHE_SETTING.enabled, label: "Caching", own: onOff(own.enabled), demo: onOff(demo.enabled) },
+  {
+    variable: CACHE_SETTING.staleIfErrorSeconds,
+    label: "Served while Pearl Abyss is down",
+    own: secondsOrOff(own.staleIfErrorSeconds),
+    demo: secondsOrOff(demo.staleIfErrorSeconds),
+  },
+  {
+    variable: CACHE_SETTING.minimumSeconds,
+    label: "Shortest time an answer stays cached",
+    own: secondsOrOff(own.minimumSeconds),
+    demo: secondsOrOff(demo.minimumSeconds),
+  },
+];
+
+/** One field's two settings, shortest default first. */
+const coordinates = [
+  ...new Set([...Object.keys(own.coordinates), ...own.neverStored, ...Object.keys(demo.coordinates)]),
+];
+const fields = coordinates
+  .map((coordinate) => {
+    const settings = settingsOf(coordinate);
+    return {
+      coordinate,
+      maxAge: settings.maxAgeSeconds,
+      staleWhileRevalidate: settings.staleWhileRevalidateSeconds,
+      own: windowOf(own, coordinate),
+      demo: windowOf(demo, coordinate),
+    };
+  })
+  .sort(
+    (a, b) =>
+      (a.own?.fresh ?? 0) - (b.own?.fresh ?? 0) ||
+      (a.own?.stale ?? 0) - (b.own?.stale ?? 0) ||
+      a.coordinate.localeCompare(b.coordinate),
+  );
+const freshText = (window: Window | null) => (window === null ? "Not cached" : durationOf(window.fresh));
+const staleText = (window: Window | null) => (window === null ? "Not cached" : durationOf(window.stale));
+
+// The overrides example: keep `Market.items` twice as long, and stop caching order books.
+const overrideSnippet = `# Keep Market.items fresh for ${durationOf(prices * 2)} instead of ${durationOf(prices)}
+export ${settingsOf("Market.items").maxAgeSeconds}=${prices * 2}
+# Never cache answers that include order books
+export ${settingsOf("MarketItem.orderBook").maxAgeSeconds}=0
+
+moon run agris:deploy`;
+
+// The same request twice shows the cache at work; `-D -` prints the response headers.
+const headersSnippet = `AGRIS='https://agris.<your-subdomain>.workers.dev'
+curl -s -o /dev/null -D - "$AGRIS/graphql" \\
+  -H 'content-type: application/json' \\
+  --data '{"query":"{ item(id: \\"44195\\") { name } }"}'`;
+---
+
+<section id="cache" class="cache" aria-labelledby="cache-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Caching</p>
+      <h2 id="cache-title">How Agris caches</h2>
+      <p class="section-lede">
+        Answers are kept in Cloudflare's cache, close to the people asking. When the same question comes back, the
+        cache answers it and Pearl Abyss gets no call.
+      </p>
+    </div>
+
+    <ol class="cache-points">
+      {
+        points.map((point, index) => (
+          <li class="cache-point">
+            <span class="cache-point-number" aria-hidden="true">
+              {index + 1}
+            </span>
+            <h3>{point.title}</h3>
+            <p>{point.text}</p>
+          </li>
+        ))
+      }
+    </ol>
+
+    <div class="cache-see" aria-labelledby="cache-see-title">
+      <div class="cache-see-copy">
+        <h3 id="cache-see-title">See it for yourself</h3>
+        <p>Every answer has a <code>Cf-Cache-Status</code> header that says what the cache did:</p>
+        <ul class="cache-statuses">
+          <li><span class="live-chip" data-tone="miss">MISS</span> Your gateway did the work.</li>
+          <li><span class="live-chip" data-tone="hit">HIT</span> The cache answered.</li>
+          <li><span class="live-chip" data-tone="stale">STALE</span> An older answer, served while a new one loads.</li>
+        </ul>
+        <p>
+          The <a href="#queries">examples below</a> show the same chip next to each result. Run one twice and the second
+          answer usually says HIT.
+        </p>
+      </div>
+      <Snippet code={headersSnippet} lang="sh" label="Response headers, from your gateway" />
+    </div>
+
+    <div class="cache-change" aria-labelledby="cache-change-title">
+      <div class="cache-change-copy">
+        <h3 id="cache-change-title">Change the defaults</h3>
+        <p>
+          Every cache time below is a default. Set its variable when you deploy, and your value replaces it. Set a
+          field's fresh time to <code>0</code> and answers that include it are never cached. To turn the cache off, set
+          <code>{CACHE_SETTING.enabled}=false</code>.
+        </p>
+        <p class="note">Set them again on every deploy. A deploy without them goes back to the defaults.</p>
+      </div>
+      <Snippet code={overrideSnippet} lang="sh" label="Change two defaults" />
+    </div>
+
+    <div class="table-scroll">
+      <table class="cache-settings" aria-label="Cache settings, their defaults and the shared demo's values">
+        <thead>
+          <tr>
+            <th scope="col">Applies to</th>
+            <th scope="col">Variable</th>
+            <th scope="col">Default</th>
+            <th scope="col">Shared demo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            wholeCache.map((setting, index) => (
+              <tr class:list={{ "cache-group-start": index === 0 }}>
+                {index === 0 && (
+                  <th scope="rowgroup" rowspan={wholeCache.length}>
+                    Every answer
+                  </th>
+                )}
+                <td class="cache-variable">
+                  <SettingVariable name={setting.variable} />
+                  <span class="cache-setting-label">{setting.label}</span>
+                </td>
+                <td class="cache-default">{setting.own}</td>
+                <td class="cache-demo">{setting.demo}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+        <tbody>
+          <tr class="cache-legend">
+            <td colspan="4">
+              Each field has two settings: <code>_MAX_AGE_SECONDS</code> is how long an answer stays fresh, and <code
+                >_STALE_WHILE_REVALIDATE_SECONDS</code
+              > is how long it is still served while a new one loads.
+            </td>
+          </tr>
+          {
+            fields.map((field) => (
+              <Fragment>
+                <tr class="cache-group-start">
+                  <th scope="rowgroup" rowspan="2">
+                    <code>{field.coordinate}</code>
+                  </th>
+                  <td class="cache-variable">
+                    <SettingVariable name={field.maxAge} />
+                  </td>
+                  <td class="cache-default">{freshText(field.own)}</td>
+                  <td class="cache-demo">{freshText(field.demo)}</td>
+                </tr>
+                <tr>
+                  <td class="cache-variable">
+                    <SettingVariable name={field.staleWhileRevalidate} />
+                  </td>
+                  <td class="cache-default">{staleText(field.own)}</td>
+                  <td class="cache-demo">{staleText(field.demo)}</td>
+                </tr>
+              </Fragment>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</section>

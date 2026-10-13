@@ -1,0 +1,47 @@
+{
+  "name": "@agris/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./cache-freshness": {
+      "types": "./src/protocol/cache-freshness.ts",
+      "import": "./src/protocol/cache-freshness.ts"
+    },
+    "./document-limits": {
+      "types": "./src/protocol/document-limits.ts",
+      "import": "./src/protocol/document-limits.ts"
+    },
+    "./freshness": {
+      "types": "./src/freshness.ts",
+      "import": "./src/freshness.ts"
+    },
+    "./testing": {
+      "types": "./src/testing.ts",
+      "import": "./src/testing.ts"
+    }
+  },
+  "dependencies": {
+    "@agris/catalog-subgraph": "workspace:*",
+    "@agris/invocation-budget": "workspace:*",
+    "@agris/market-subgraph": "workspace:*",
+    "@apollo/subgraph": "catalog:",
+    "@graphql-hive/gateway-runtime": "catalog:",
+    "@graphql-mesh/compose-cli": "catalog:",
+    "@pothos/core": "catalog:",
+    "@pothos/plugin-dataloader": "catalog:",
+    "@pothos/plugin-directives": "catalog:",
+    "@pothos/plugin-federation": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "graphql": "catalog:",
+    "graphql-yoga": "catalog:",
+    "typescript": "catalog:",
+    "xstate": "catalog:"
+  }
+}

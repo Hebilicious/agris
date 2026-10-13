@@ -1,0 +1,76 @@
+language: "typescript"
+layer: "tool"
+stack: "backend"
+
+project:
+  title: "Agris Catalog Tools"
+  description: "Validate the shipped item catalog and generate the catalog subgraph's search artifact from it."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+tasks:
+  typecheck:
+    description: "Type-check the catalog tools and the Worker that bundles the generated search artifact."
+    command: "tsc"
+    args: ["-p", "tsconfig.json", "--noEmit"]
+    deps: ["^:build", "artifact-worker-typecheck"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json", "@group(agris-sources)"]
+
+  build:
+    description: "Compile the catalog tools."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:build"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json", "@group(agris-sources)"]
+    outputs: ["dist/**/*"]
+
+  validate:
+    description: "Validate catalog order, required fields, count and checksum before publication."
+    command: "node"
+    args: ["dist/validate.js"]
+    deps: ["build"]
+    inputs: ["dist/**/*.js", "/data/catalog/**/*", "@group(agris-sources)"]
+
+  generate:
+    description: "Generate the all-locale catalog and compact item-name search artifact into the catalog subgraph."
+    command: "node"
+    args: ["dist/generate-search-artifact.js"]
+    deps: ["build", "validate"]
+    inputs: ["dist/**/*.js", "/data/catalog/**/*", "@group(agris-sources)"]
+    options:
+      cache: false
+
+  search-artifact-check:
+    description: "Verify the committed search artifact's determinism, checksums, alignment and compact-index invariants."
+    command: "vitest"
+    args: ["run", "src/search-artifact.test.ts", "--config", "vitest.config.ts"]
+    deps: ["build", "validate"]
+    inputs: ["src/**/*.ts", "vitest.config.ts", "/data/catalog/**/*", "package.json", "@group(agris-sources)"]
+
+  artifact-worker-typecheck:
+    description: "Type-check the generated catalog artifact through a Worker-compatible consumer."
+    command: "tsc"
+    args: ["-p", "artifact-worker/tsconfig.json"]
+    deps: ["^:build"]
+    inputs: ["artifact-worker/**/*.ts", "artifact-worker/tsconfig.json", "package.json", "@group(agris-sources)"]
+
+  artifact-worker-build:
+    description: "Bundle the generated catalog search Worker with the Alchemy bundler for the release diagnostic."
+    command: "node"
+    args: ["../../infra/bundle.ts", "../../.artifacts/catalog-release", "CatalogSearchArtifact"]
+    deps: ["artifact-worker-typecheck", "infra:typecheck"]
+    inputs: ["artifact-worker/artifact-worker.ts", "package.json", "@group(agris-sources)"]
+    options:
+      cache: false
+
+  release-diagnostic:
+    description: "Measure the catalog Worker's startup, retained isolate memory, compressed upload and exact-search p95 in workerd."
+    tags: ["external-state"]
+    command: "node"
+    args: ["dist/release-diagnostic.js"]
+    deps: ["build", "artifact-worker-build", "infra:bundle"]
+    inputs: ["dist/release-diagnostic.js", "artifact-worker/artifact-worker.ts", "@group(agris-sources)"]
+    options:
+      cache: false
+      runInCI: "skip"

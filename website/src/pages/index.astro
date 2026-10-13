@@ -1,0 +1,554 @@
+---
+
+import CacheSection from "../components/CacheSection.astro";
+import Example from "../components/Example.astro";
+import Exchange from "../components/Exchange.astro";
+import Icon, { type IconName } from "../components/Icon.astro";
+import SettingsTable, { type SettingRow } from "../components/SettingsTable.astro";
+import Snippet from "../components/Snippet.astro";
+import Base from "../layouts/Base.astro";
+import { DEMO, freshnessRowsOf, LIMIT_SETTINGS, rateOf, SELF_HOSTED, type Rate } from "../facts.ts";
+import { durationOf, LOCALES } from "../figure/model.ts";
+import { CHECKED_EXAMPLES } from "../queries/examples-policy.ts";
+import { DEMO_GRAPHQL, ENVELOP_PLUGINS, ISSUES, NEW_TAB, PULL_REQUESTS, REPOSITORY } from "../site.ts";
+
+// Every window and limit below is read through `src/facts.ts`; the words around them are written by hand. Cache windows
+// are a self-hosted gateway's defaults, which a deployment can change in its gateway settings.
+const freshness = SELF_HOSTED.cacheFreshness;
+const freshnessRows = freshnessRowsOf(freshness);
+const shortestWindow = Math.min(...freshnessRows.map((row) => row.fresh));
+const longestWindow = Math.max(...freshnessRows.map((row) => row.fresh));
+const languages = LOCALES.length;
+// Rate limits a deployment may leave off.
+const ownClientLimit: Rate | null = SELF_HOSTED.clientRateLimit;
+const demoClientLimit: Rate | null = DEMO.clientRateLimit;
+
+/** The hero artwork's widths in `public/art/`, up to its natural 2048. */
+const ART_WIDTHS = [768, 1024, 1536, 2048] as const;
+const artSrcset = (format: "avif" | "webp") =>
+  ART_WIDTHS.map((width) => `/art/agris-${width}.${format} ${width}w`).join(", ");
+/**
+ * How wide `.hero-backdrop` draws the art (`--art-width` in global.css): a cover band below 961px, 0.65 of its natural
+ * width up to 1199px, then growing with the window until it reaches 2048px.
+ */
+const ART_SIZES = "(max-width: 960px) 820px, (max-width: 1199px) 1331px, (min-width: 1900px) 2048px, calc(112vw - 97px)";
+
+const freedoms: { icon: IconName; title: string; text: string }[] = [
+  { icon: "scroll", title: "MIT licensed", text: "All of the code: the API, the Workers, the tests and this site. Use it, fork it, build on it." },
+  { icon: "key", title: "No account, no API key", text: "There is nothing to sign up for and nothing to pay us. Your copy answers to you." },
+  { icon: "eye", title: "No tracking", text: "No analytics and no cookies here. Your gateway logs to your own Cloudflare account only." },
+  { icon: "home", title: "Run it yourself", text: "Five commands put your own copy on your Cloudflare account, on any hostname you like." },
+  { icon: "merge", title: "Pull requests welcome", text: "Issues and pull requests are open to everyone, and the contributing guide fits on one screen." },
+  { icon: "lens", title: "Nothing hidden", text: "TypeScript end to end, with the behaviour written down as plain-English test scenarios." },
+];
+
+/** One problem a caller of Pearl Abyss's trade servers runs into, and what Agris does about it. */
+interface Fix {
+  problem: string;
+  pain: string;
+  title: string;
+  text: string;
+  /** The parts of the stack that do the work. */
+  uses: string[];
+}
+
+const fixes: Fix[] = [
+  {
+    problem: "Undocumented rows of numbers",
+    pain: "Pearl Abyss documents none of its trade endpoints. They answer with compact rows of numbers split by dashes and pipes, some of them Huffman-compressed, and only a number's position tells you what it means.",
+    title: "A clear GraphQL schema",
+    text: "Agris decodes every row into named, typed fields that GraphiQL can show you. Each row's shape is checked first, so a format change upstream turns into an error, never a wrong price.",
+    uses: ["Pothos", "GraphQL Yoga"],
+  },
+  {
+    problem: "IDs without names",
+    pain: "The market knows items only by number. It sends no names or grades and has no search, so 44195 means nothing until you bring your own item list.",
+    title: `Names in ${languages} languages, built in`,
+    text: "The item catalog ships with Agris and answers from memory, with a search by part of a name. Federation joins names to prices, so one query gets both.",
+    uses: ["Apollo Federation", "Hive Gateway", "GraphQL Mesh"],
+  },
+  {
+    problem: "A different server for every region",
+    pain: "Each region has its own host in its own datacenter, often far from you. Every call pays for that distance, and a slow answer holds up everything waiting on it.",
+    title: "A coordinator next to each server",
+    text: "Agris keeps one Durable Object per Pearl Abyss host and uses a location hint to place it near that host's datacenter. Your query enters at the Cloudflare location closest to you, and the gateway reaches its subgraphs over Service Bindings, with no public hop in between.",
+    uses: ["Durable Objects", "Service Bindings"],
+  },
+  {
+    problem: "Easy to get throttled",
+    pain: "Pearl Abyss throttles callers who ask too much, and it publishes no limits. A script that hammers it gets slow answers and errors, and risks being blocked.",
+    title: "Polite by default",
+    text: `Each coordinator runs at most ${SELF_HOSTED.pearlAbyssConcurrency} calls at once and queues the rest in order, with a limit of ${rateOf(SELF_HOSTED.pearlAbyssRateLimit)} behind it for bursts. A failed call is not retried. Both numbers are settings.`,
+    uses: ["Durable Objects", "Workers rate limiting"],
+  },
+  {
+    problem: "Everyone asks for the same thing",
+    pain: "When an item is in demand, many people look it up at the same moment. Sent straight to Pearl Abyss, each lookup is one more call to a server that is already busy.",
+    title: "Asked once, answered many times",
+    text: `Identical calls in flight share one fetch. Answers then wait in Cloudflare's edge cache for as long as their fields allow, from ${durationOf(shortestWindow)} to ${durationOf(longestWindow)}. After that the old answer is served while a new one loads, and if Pearl Abyss is down it can stand in for ${durationOf(freshness.staleIfErrorSeconds)}. Every window is a setting, and caching can be turned off.`,
+    uses: ["Workers cache", "Durable Objects"],
+  },
+  {
+    problem: "Closed to browsers",
+    pain: "The trade servers send no CORS headers, so a web page cannot call them. Every price tracker needs a server of its own in the middle.",
+    title: "CORS and GraphiQL at the edge",
+    text: "Your gateway answers browsers from any origin, so a static page can query it directly. Open /graphql in a browser to explore the schema in GraphiQL, or switch GraphiQL off.",
+    uses: ["Cloudflare Workers", "GraphQL Yoga"],
+  },
+  {
+    problem: "One client can crowd out the rest",
+    pain: "An open endpoint attracts scrapers and runaway loops, and every request they send can become another call upstream.",
+    title: "Rate limits at the door",
+    text:
+      ownClientLimit === null
+        ? "Set a limit per visitor and Workers rate limiting counts each one before any other work. Past it, they get a 429 with a Retry-After header, and nothing reaches Pearl Abyss."
+        : `Workers rate limiting counts each visitor before any other work. Past ${rateOf(ownClientLimit)}, they get a 429 with a Retry-After header, and nothing reaches Pearl Abyss. Change the limit, or remove it.`,
+    uses: ["Workers rate limiting"],
+  },
+];
+
+interface Flow {
+  title: string;
+  text: string;
+}
+
+const flow: Flow[] = [
+  {
+    title: "The gateway takes the query",
+    text: "One public Worker receives it, checks it against the schema and the query limits, and counts it against the rate limit.",
+  },
+  {
+    title: "It gets a cache key",
+    text: "The query and its variables are printed in one canonical form and hashed, so the same question asked differently shares one answer.",
+  },
+  {
+    title: "The edge cache answers if it can",
+    text: "Cacheable queries run behind a cached entrypoint of the same Worker, so Cloudflare's cache sits in front of all the work. A hit stops here.",
+  },
+  {
+    title: "Hive Gateway plans the federation",
+    text: "On a miss, the gateway splits the query between the catalog and market subgraphs and joins their answers on the shared Item entity.",
+  },
+  {
+    title: "The subgraphs answer",
+    text: "The catalog answers names from memory. The market asks Pearl Abyss through one Durable Object per server, which merges identical calls.",
+  },
+];
+
+interface Tool {
+  name: string;
+  text: string;
+}
+
+interface Layer {
+  id: string;
+  icon: IconName;
+  title: string;
+  lede: string;
+  tools: Tool[];
+}
+
+const layers: Layer[] = [
+  {
+    id: "graph",
+    icon: "graph",
+    title: "The graph",
+    lede: "A real Apollo Federation v2 supergraph, built from open-source parts.",
+    tools: [
+      { name: "Apollo Federation v2", text: "The catalog owns the Item entity; the market extends it with prices. Clients see one schema." },
+      { name: "Hive Gateway", text: "The Guild's open-source federation gateway, embedded as a runtime inside a Worker." },
+      { name: "GraphQL Mesh Compose", text: "Composes both subgraphs into the supergraph at build time, so the gateway starts with its plan ready." },
+      { name: "Pothos", text: "Type-safe, code-first subgraph schemas, with its federation, dataloader and directives plugins." },
+      { name: "GraphQL Yoga", text: "Serves each subgraph, and GraphiQL when you open the endpoint in a browser." },
+      { name: "Envelop", text: "The plugin system Hive Gateway and Yoga share. Tracing, auth or stricter limits are one line away." },
+    ],
+  },
+  {
+    id: "edge",
+    icon: "cloud",
+    title: "The edge",
+    lede: "Three Cloudflare Workers and no server to look after.",
+    tools: [
+      { name: "Cloudflare Workers", text: "A public gateway and two private subgraphs, deployed side by side to your account." },
+      { name: "Service Bindings", text: "The gateway calls the subgraphs Worker to Worker. They have no public URL at all." },
+      { name: "Durable Objects", text: "One per Pearl Abyss server, placed near it: identical calls in flight share one fetch, and the rest wait their turn." },
+      { name: "Rate limiting", text: "Workers rate-limiting bindings turn a flood away with a cheap 429, before it reaches a subgraph or Pearl Abyss." },
+      { name: "Workers cache", text: "A named entrypoint with caching turned on puts Cloudflare's cache in front of execution." },
+    ],
+  },
+  {
+    id: "code",
+    icon: "code",
+    title: "The code",
+    lede: "Strict TypeScript from the request to the response.",
+    tools: [
+      { name: "TypeScript", text: "Strict everywhere, with no any. Upstream answers are unknown until they are validated." },
+      { name: "XState", text: "State machines for the Service Binding connection pool and the Pearl Abyss transport." },
+      { name: "Effect", text: "Typed effects in the gateway and through the test harness." },
+      { name: "Effect Schema", text: "Validates configuration and JSON at the edges." },
+    ],
+  },
+  {
+    id: "workshop",
+    icon: "tools",
+    title: "The workshop",
+    lede: "Fast tools that keep a small project honest.",
+    tools: [
+      { name: "moon and proto", text: "Every task runs through moon, cached where it can be; proto pins Node.js, pnpm and moon for everyone." },
+      { name: "pnpm", text: "One workspace, one catalog of versions." },
+      { name: "oxlint and oxfmt", text: "Linting and formatting in milliseconds." },
+      { name: "Vitest", text: "Tests run headless, as an in-process federated graph, and inside the real Workers runtime." },
+      { name: "Gherkin", text: "Every promise the API makes is a plain-English scenario first." },
+      { name: "Astro", text: "This page: static HTML, a little TypeScript, no framework." },
+    ],
+  },
+];
+
+// The gateway's plugin list, with one plugin from the Envelop catalogue added: GraphQL Armor's cap on how many tokens a
+// query may contain, which needs no options.
+const pluginSnippet = `import type { GatewayPlugin } from "@graphql-hive/gateway-runtime";
+import { maxTokensPlugin } from "@escape.tech/graphql-armor-max-tokens";
+
+export const gatewayPlugins: readonly GatewayPlugin[] = [
+  maxTokensPlugin(), // the one line you add
+];`;
+
+const steps = [
+  { title: "Install proto", note: "It brings the pinned Node.js, pnpm and moon.", code: "curl -fsSL https://moonrepo.dev/install/proto.sh | bash" },
+  { title: "Get the code", note: "Clone the repository.", code: "git clone https://github.com/Hebilicious/agris.git && cd agris" },
+  { title: "Install", note: "Toolchain first, then dependencies.", code: "proto install && pnpm install" },
+  {
+    title: "Point it at your account",
+    note: "Your account ID and an “Edit Cloudflare Workers” API token. They stay in your shell, never in the repository.",
+    code: "export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...",
+  },
+  { title: "Deploy", note: "Alchemy creates the gateway, its cache, the market and the catalog Workers.", code: "moon run agris:deploy" },
+];
+const deployAll = steps.map((step) => step.code).join("\n");
+
+const limitSettings: readonly SettingRow[] = LIMIT_SETTINGS;
+---
+
+<Base
+  title="Agris: Black Desert Online Central Market Proxy"
+  description={`Agris is a free, open-source GraphQL proxy for the Black Desert Online Central Market: prices, stock, order books and price history for every region, with item names in ${languages} languages. Federated with Hive Gateway on Cloudflare Workers, and deployed to your own account.`}
+>
+  <section class="hero" aria-labelledby="hero-title">
+    <!-- Never drawn above its natural 2048 × 768; `sizes` follows `--art-width` in global.css. -->
+    <picture class="hero-backdrop">
+      <source type="image/avif" srcset={artSrcset("avif")} sizes={ART_SIZES} />
+      <source type="image/webp" srcset={artSrcset("webp")} sizes={ART_SIZES} />
+      <img
+        src="/art/agris-2048.webp"
+        alt="Agris, blindfolded, raising a glowing GraphQL logo in one hand and holding a scale under a full moon"
+        width="2048"
+        height="768"
+        fetchpriority="high"
+        decoding="async"
+      />
+    </picture>
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <ul class="hero-badges" aria-label="At a glance">
+          <li class="badge badge-gold">100% free and open source</li>
+          <li class="badge">MIT</li>
+          <li class="badge">Cloudflare Workers</li>
+        </ul>
+        <h1 id="hero-title">Black Desert Online Central Market Proxy</h1>
+        <p class="lede">
+          Agris turns the Black Desert Online Central Market into a typed, federated GraphQL API. Prices, stock, order
+          books and price history for every region, with item names in {languages} languages. You run it on your own
+          Cloudflare account, with no API key and nobody else's traffic.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="#deploy">
+            Deploy your own
+            <Icon name="arrow" size={18} />
+          </a>
+          <a class="button ghost" href={DEMO_GRAPHQL} {...NEW_TAB}>
+            Open GraphiQL
+            <Icon name="external" size={16} />
+          </a>
+          <a class="button ghost" href={REPOSITORY} {...NEW_TAB}>
+            View on GitHub
+            <Icon name="external" size={16} />
+          </a>
+        </div>
+        <p class="hero-note">
+          GraphiQL and the examples run on a small shared demo. It is a courtesy and may go away, so deploy your own for
+          anything real.
+        </p>
+      </div>
+    </div>
+    <div class="wrap">
+      <ul class="hero-stack" aria-label="Built with">
+        <li>Apollo Federation v2</li>
+        <li>Hive Gateway</li>
+        <li>GraphQL Mesh</li>
+        <li>GraphQL Yoga</li>
+        <li>Pothos</li>
+        <li>Envelop</li>
+        <li>Cloudflare Workers</li>
+        <li>Durable Objects</li>
+        <li>TypeScript</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="foss" class="foss" aria-labelledby="foss-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Free as in freedom</p>
+        <h2 id="foss-title">100% free and open source</h2>
+        <p class="section-lede">
+          No open core, no paid tier, no catch. All of Agris's code is on GitHub under the MIT license, and the only bill
+          is the one Cloudflare sends you for your own Workers.
+        </p>
+      </div>
+      <ul class="freedoms">
+        {
+          freedoms.map((item) => (
+            <li class="freedom">
+              <span class="freedom-icon">
+                <Icon name={item.icon} size={22} />
+              </span>
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="foss-cta">
+        <a class="button" href={REPOSITORY} {...NEW_TAB}>Star it on GitHub <Icon name="external" size={16} /></a>
+        <a class="button" href={ISSUES} {...NEW_TAB}>Open an issue <Icon name="external" size={16} /></a>
+        <a class="button" href={PULL_REQUESTS} {...NEW_TAB}>Send a pull request <Icon name="external" size={16} /></a>
+      </p>
+    </div>
+  </section>
+
+  <section id="why" class="why" aria-labelledby="why-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Why Agris</p>
+        <h2 id="why-title">Why not call Pearl Abyss directly?</h2>
+        <p class="section-lede">
+          Anyone who calls the Central Market's servers runs into the same few problems. Here is each one, and what Agris
+          does about it on Cloudflare.
+        </p>
+      </div>
+      <ol class="fixes">
+        {
+          fixes.map((fix) => (
+            <li class="fix">
+              <div class="fix-problem">
+                <p class="fix-label">The problem</p>
+                <h3>{fix.problem}</h3>
+                <p>{fix.pain}</p>
+              </div>
+              <span class="fix-arrow" aria-hidden="true">
+                <Icon name="arrow" size={20} />
+              </span>
+              <div class="fix-answer">
+                <p class="fix-label">What Agris does</p>
+                <h3>{fix.title}</h3>
+                <p>{fix.text}</p>
+                <ul class="fix-uses" aria-label="Built with">
+                  {fix.uses.map((use) => (
+                    <li>{use}</li>
+                  ))}
+                </ul>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section id="machine" class="machine" aria-labelledby="machine-title">
+    <div class="wrap">
+      <div class="section-head section-head-split">
+        <p class="eyebrow">See it work</p>
+        <h2 id="machine-title">Follow one query through the machine</h2>
+        <p class="section-lede">
+          Here Agris is drawn as a counting-house machine, and a query is a punched card. Press <strong>Send</strong> and
+          watch it pass the rate limit, get its cache key and check the edge cache. On a miss it splits between the two
+          subgraphs, and only one of them talks to Pearl Abyss. Point at any part to see what it is.
+        </p>
+      </div>
+      <Exchange />
+    </div>
+  </section>
+
+  <section id="stack" class="stack" aria-labelledby="stack-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">The stack</p>
+        <h2 id="stack-title">Federated GraphQL, running at the edge</h2>
+        <p class="section-lede">
+          Agris is a real federated graph: two subgraphs, composed into one supergraph and executed by Hive Gateway inside
+          a Cloudflare Worker. Each subgraph is its own Worker, and they talk over Service Bindings, so the whole graph
+          lives in Cloudflare's network with no server to run.
+        </p>
+      </div>
+
+      <div class="flow" aria-labelledby="flow-title">
+        <h3 id="flow-title">How a query flows</h3>
+        <ol class="flow-steps">
+          {
+            flow.map((step, index) => (
+              <li class="flow-step">
+                <span class="flow-number" aria-hidden="true">{index + 1}</span>
+                <h4>{step.title}</h4>
+                <p>{step.text}</p>
+              </li>
+            ))
+          }
+        </ol>
+      </div>
+
+      <div class="layers">
+        {
+          layers.map((layer) => (
+            <article class="layer" data-layer={layer.id}>
+              <header>
+                <span class="layer-icon">
+                  <Icon name={layer.icon} size={22} />
+                </span>
+                <div>
+                  <h3>{layer.title}</h3>
+                  <p>{layer.lede}</p>
+                </div>
+              </header>
+              <dl>
+                {layer.tools.map((tool) => (
+                  <div>
+                    <dt>{tool.name}</dt>
+                    <dd>{tool.text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          ))
+        }
+      </div>
+
+      <div class="extend" aria-labelledby="extend-title">
+        <div class="extend-copy">
+          <p class="eyebrow">Make it yours</p>
+          <h3 id="extend-title">Extend it with Envelop plugins</h3>
+          <p>
+            Hive Gateway runs Envelop plugins, the same hooks GraphQL Yoga is built on, and your gateway keeps a list of
+            them in <code>apps/gateway/src/plugins.ts</code>. Install a plugin, add one line, deploy, and it runs on
+            every query your gateway executes. Answers from the edge cache never reach it.
+          </p>
+          <p>
+            The Envelop catalogue has plugins for tracing with OpenTelemetry, error reports to Sentry, auth, logging and
+            stricter query limits, and writing your own takes a few lines more.
+          </p>
+          <a class="button primary" href={ENVELOP_PLUGINS} {...NEW_TAB}>
+            Browse the Envelop plugin hub
+            <Icon name="external" size={16} />
+          </a>
+        </div>
+        <Snippet code={pluginSnippet} lang="ts" label="Your gateway's plugin list" />
+      </div>
+    </div>
+  </section>
+
+  <CacheSection />
+
+  <section id="queries" class="queries" aria-labelledby="queries-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Try a query</p>
+        <h2 id="queries-title">Example queries</h2>
+        <p class="section-lede">
+          Each one is checked against the schema and the public limits when this site is built. Run it right here on
+          the shared demo{demoClientLimit === null ? "" : `, which takes ${rateOf(demoClientLimit)} from each visitor`},
+          open it in GraphiQL, or copy it as <code>curl</code> for your own gateway. Item IDs are the game's own numeric
+          IDs.
+        </p>
+      </div>
+      <div class="examples">
+        {CHECKED_EXAMPLES.map((example) => <Example example={example} />)}
+      </div>
+    </div>
+  </section>
+
+  <section id="deploy" class="deploy" aria-labelledby="deploy-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Deploy your own</p>
+        <h2 id="deploy-title">Your own gateway in five commands</h2>
+        <p class="section-lede">
+          Self-hosting is the way to use Agris: your own limits, your own cache, your own hostname, and nobody else's
+          traffic. It takes about five minutes.
+        </p>
+      </div>
+      <div class="deploy-grid">
+        <ol class="deploy-steps">
+          {
+            steps.map((step, index) => (
+              <li>
+                <span class="deploy-number" aria-hidden="true">{index + 1}</span>
+                <div>
+                  <h3>{step.title}</h3>
+                  <p>{step.note}</p>
+                  <pre><code>{step.code}</code></pre>
+                </div>
+              </li>
+            ))
+          }
+          <li class="deploy-done">
+            <span class="deploy-number" aria-hidden="true">✓</span>
+            <div>
+              <h3>Check it answers</h3>
+              <p>Your gateway is live on workers.dev. Open <code>/graphql</code> on it for GraphiQL.</p>
+              <pre><code>curl https://agris.&lt;your-subdomain&gt;.workers.dev/health</code></pre>
+            </div>
+          </li>
+        </ol>
+        <aside class="deploy-notes" aria-label="Before you start">
+          <Snippet code={deployAll} lang="sh" label="All five, to copy" />
+          <div class="note-card">
+            <h3>What you need</h3>
+            <p>A Cloudflare account, on the free Workers plan or a paid one, plus <code>git</code> and <code>curl</code>. proto installs the rest.</p>
+          </div>
+          <div class="note-card">
+            <h3>Any hostname</h3>
+            <p>
+              It starts on <code>workers.dev</code> because that needs no setup. A custom domain or a route on any zone in
+              your account works the same.
+            </p>
+          </div>
+          <div class="note-card">
+            <h3>Make it yours</h3>
+            <p>
+              Every rate limit, cache window, query limit, hostname and GraphiQL is its own setting, passed to the
+              deploy command, and every limit can be set to 0 to turn it off. The deploy guide lists them all.
+            </p>
+          </div>
+          <div class="note-card">
+            <h3>Using a coding agent?</h3>
+            <p>Ask it to deploy Agris for you. The repository ships a deploy skill that walks it through every step.</p>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section id="demo" class="demo" aria-labelledby="demo-title">
+    <div class="wrap demo-grid">
+      <div>
+        <p class="eyebrow">About the shared demo</p>
+        <h2 id="demo-title">The demo is small on purpose</h2>
+        <p class="section-lede">
+          The demo API behind GraphiQL and the examples is shared by everyone who visits, so it runs with tight limits
+          and long cache times. It may be slowed down or switched off at any time. Look around, then deploy your own.
+        </p>
+      </div>
+      <SettingsTable rows={limitSettings} label="Default limits, and the shared demo's" />
+    </div>
+  </section>
+</Base>

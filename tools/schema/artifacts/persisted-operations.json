@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "operations": {
+    "2e23b7343c2a4c210e1d83395e8c3fe2a393af63840cac8f4e58b3e79d9f87a6": {
+      "name": "MarketItemsWithCatalog",
+      "document": "query MarketItemsWithCatalog($region:MarketRegion!$ids:[ID!]!$locale:ItemLocale=EN){market(region:$region locale:$locale){region locale observedAt items(ids:$ids){item{id locale name grade}isListed basePrice currentStock totalTrades}}}"
+    }
+  }
+}

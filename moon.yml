@@ -1,0 +1,119 @@
+language: "typescript"
+layer: "application"
+stack: "backend"
+
+project:
+  title: "Agris"
+  description: "A deployable GraphQL proxy over the Black Desert Online Central Market."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Repository-wide operations and the aggregates that name every project's task. Each project's own moon.yml holds the
+# work itself.
+tasks:
+  lint:
+    description: "Lint every TypeScript file with oxlint."
+    command: "oxlint"
+    args: ["--deny-warnings", "."]
+    inputs: ["**/*.ts", ".oxlintrc.json", "!**/node_modules/**", "!**/dist/**"]
+
+  format:
+    description: "Format the repository with oxfmt."
+    command: "oxfmt"
+    args: ["--write", "."]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  format-check:
+    description: "Check that the repository is formatted with oxfmt."
+    command: "oxfmt"
+    args: ["--check", "."]
+    inputs: ["**/*", "!**/node_modules/**", "!**/dist/**", "!.moon/cache/**", "!**/.artifacts/**"]
+
+  typecheck:
+    description: "Type-check every project."
+    command: "noop"
+    deps:
+      - "core:typecheck"
+      - "catalog-subgraph:typecheck"
+      - "market-subgraph:typecheck"
+      - "pearl-abyss:typecheck"
+      - "invocation-budget:typecheck"
+      - "worker-runtime:typecheck"
+      - "gateway-worker:typecheck"
+      - "market-worker:typecheck"
+      - "catalog-worker:typecheck"
+      - "schema:typecheck"
+      - "catalog-tools:typecheck"
+      - "smoke:typecheck"
+      - "tests:typecheck"
+      - "tests:workers-typecheck"
+      - "tests:catalog-worker-typecheck"
+      - "website:typecheck"
+      - "infra:typecheck"
+
+  test:
+    description: "Run every local test suite and artifact check."
+    command: "noop"
+    deps:
+      - "tests:test"
+      - "schema:check"
+      - "schema:generated-check"
+      - "catalog-tools:validate"
+      - "catalog-tools:search-artifact-check"
+      - "website:figure-audit"
+      - "website:links-check"
+      - "website:live-check"
+
+  bundle:
+    description: "Bundle every Worker the Alchemy stack deploys, the Workers' own entrypoints as a host deploys them included, without a Cloudflare account."
+    command: "noop"
+    deps: ["infra:bundle"]
+
+  check:
+    description: "Everything a change must pass: formatting, lint, type checks, tests, generated-artifact checks, the website build and the Alchemy bundles."
+    command: "noop"
+    deps: ["format-check", "lint", "typecheck", "test", "website:build", "bundle"]
+
+  generate:
+    description: "Regenerate the committed schema artifacts and catalog search artifact from source."
+    command: "noop"
+    deps: ["schema:generate", "catalog-tools:generate"]
+    options:
+      cache: false
+
+  dev:
+    description: "Run the Alchemy stack's `local` stage on this machine with `alchemy dev`: the gateway on port 8790, with the market, catalog and cache Workers beside it."
+    command: "noop"
+    deps: ["infra:dev"]
+    preset: "server"
+
+  deploy:
+    description: "Deploy a self-hosted Agris, the Alchemy stack's `production` stage, configured from this command's environment."
+    tags: ["external-mutation"]
+    command: "noop"
+    deps: ["infra:deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  demo-deploy:
+    description: "Deploy the maintainer's shared demo API (`agris-demo`)."
+    tags: ["external-mutation"]
+    command: "noop"
+    deps: ["infra:demo-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  docs-deploy:
+    description: "Build the website and deploy it as the assets-only `agris-docs` Worker."
+    tags: ["external-mutation"]
+    command: "noop"
+    deps: ["website:build", "infra:docs-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+      runDepsInParallel: false

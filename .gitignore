@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.artifacts/
+.cloudflare/
+.wrangler/
+# Alchemy's local working state; deployed state lives in the account's state-store Worker.
+.alchemy/
+.moon/cache/
+.moon/docker/
+.dev.vars*
+.env*
+!.env.example
+*.tsbuildinfo
+coverage/
+
+# Astro writes generated types here on every build.
+.astro/
+
+# `wrangler types` writes these beside a Worker's configuration; they are build output.
+worker-configuration.d.ts
+
+# Local-only trees a checkout can accumulate.
+/.pnpm-store/
+/.proto/
+/.worktrees/

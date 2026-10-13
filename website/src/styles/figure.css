@@ -1,0 +1,828 @@
+/*
+ * Fig 1's own styles, over the anatomy kit's `iso.css`. The kit's four-tone shading stays; its greys are re-tinted to
+ * the site's parchment (light) and violet night (dark). One accent stays lit, now in brass gold, and the cache's status
+ * colours appear only where the status is the subject: the hourglass sand, the card's stamp and the badge.
+ */
+@media (prefers-color-scheme: light) {
+  .iso {
+    --anatomy-page: #f6efe0;
+    --anatomy-card: #fffaf0;
+    --anatomy-text: #3d3350;
+    --anatomy-strong: #1f1633;
+    --anatomy-muted: #65597a;
+    --anatomy-paper: #fffaf0;
+    --anatomy-face: #fffdf7;
+    --anatomy-top: #fffdf8;
+    --anatomy-shade-0: #e5d9bf;
+    --anatomy-shade-1: #ece2cc;
+    --anatomy-shade-2: #f2eadb;
+    --anatomy-shade-3: #f7f1e6;
+    --anatomy-lit-top: #fff6dd;
+    --anatomy-lit-shade: #f6e6bf;
+    --anatomy-hi: #2a1f42;
+    --anatomy-mid: #8a7c96;
+    --anatomy-lo: #b9aa9a;
+    --anatomy-faint: #dccfb8;
+    --anatomy-lit: #a86d00;
+    --anatomy-halo: #8a7650;
+    --anatomy-halo-opacity: 0.3;
+    --anatomy-dot: #3a2e4a;
+    --fx-cavity: #d3c4a6;
+    --fx-glass: #fffaf0;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .iso {
+    --anatomy-page: #120c1d;
+    --anatomy-card: #170f25;
+    --anatomy-text: #d7cde4;
+    --anatomy-strong: #f7eedb;
+    --anatomy-muted: #a99bbd;
+    --anatomy-paper: #170f25;
+    --anatomy-face: #241a39;
+    --anatomy-top: #251b3b;
+    --anatomy-shade-0: #140d21;
+    --anatomy-shade-1: #181027;
+    --anatomy-shade-2: #1c142d;
+    --anatomy-shade-3: #201733;
+    --anatomy-lit-top: #3a2c1a;
+    --anatomy-lit-shade: #2e2216;
+    --anatomy-hi: #e6dbf3;
+    --anatomy-mid: #7d6e96;
+    --anatomy-lo: #4b3e63;
+    --anatomy-faint: #33284a;
+    --anatomy-lit: #f2c96a;
+    --anatomy-halo: #05030a;
+    --anatomy-halo-opacity: 0.85;
+    --anatomy-dot: #e6dbf3;
+    --fx-cavity: #0b0714;
+    --fx-glass: #1e1530;
+  }
+}
+
+/* The status colour of the card in play, for the parts that show it. */
+.fx {
+  --fx-status: var(--gold);
+}
+
+.fx[data-status="hit"] {
+  --fx-status: var(--hit);
+}
+
+.fx[data-status="miss"] {
+  --fx-status: var(--miss);
+}
+
+.fx[data-status="stale"] {
+  --fx-status: var(--stale);
+}
+
+.fx[data-status="bypass"] {
+  --fx-status: var(--bypass);
+}
+
+.fx[data-status="rejected"] {
+  --fx-status: var(--deny);
+}
+
+.fx.iso-figure {
+  margin: 0;
+}
+
+.fx .iso-plate {
+  border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--shadow);
+}
+
+/* ---------------------------------------------------------------- console */
+
+.fx-console {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(180deg, var(--night-2), var(--night-1));
+  box-shadow: 0 0 0 1px var(--line-strong);
+  color: var(--night-text);
+}
+
+.fx-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* A fixed size: the query it sends is chosen beside it, so nothing inside the button changes. */
+.fx-send {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 8.5rem;
+  height: 3rem;
+  padding: 0 1.1rem 0 0.9rem;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffd889, #e3ad45 55%, #c08a23);
+  box-shadow:
+    0 0 0 1px #8a5a0080,
+    0 1px 0 #fff3d0 inset,
+    0 12px 26px -12px #e3ad45;
+  color: #241606;
+  font: 700 1rem/1.1 var(--sans);
+  cursor: pointer;
+  transition: transform 140ms var(--ease);
+}
+
+.fx-send:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.fx-send-verb {
+  font-family: var(--display);
+  letter-spacing: 0.05em;
+}
+
+.fx-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.fx-pick {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.4rem 0.7rem;
+  border: 0;
+  border-radius: 9px;
+  background: #ffffff0c;
+  box-shadow: 0 0 0 1px #ffffff26 inset;
+  color: var(--night-text);
+  font: 600 0.85rem/1.15 var(--sans);
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+
+.fx-pick:hover {
+  background: #ffffff18;
+}
+
+.fx-pick[aria-checked="true"] {
+  background: #f2c96a24;
+  box-shadow: 0 0 0 1.5px #f2c96a inset;
+  color: var(--night-ink);
+}
+
+.fx-pick-term {
+  color: var(--night-muted);
+  font: 500 0.7rem/1.1 var(--mono);
+}
+
+.fx-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.fx-trick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 0;
+  border-radius: 9px;
+  background: #ffffff0c;
+  box-shadow: 0 0 0 1px #ffffff26 inset;
+  color: var(--night-ink);
+  font: 600 0.85rem/1.15 var(--sans);
+  cursor: pointer;
+}
+
+.fx-trick:hover {
+  background: #ffffff18;
+}
+
+.fx-trick-term {
+  color: var(--night-muted);
+  font: 500 0.75rem/1 var(--mono);
+}
+
+/* Holds the widest window the picks can show, so switching queries never resizes Skip ahead. */
+.fx-skip-term {
+  display: inline-block;
+  min-width: var(--fx-skip-width, auto);
+  text-align: left;
+}
+
+.fx-flood .icon {
+  color: #ff9aa0;
+}
+
+.fx-trick .icon {
+  color: #f2c96a;
+}
+
+.fx-reset .icon {
+  color: var(--night-muted);
+}
+
+/* The control that shows the next idea breathes, once the reader has the machine to themselves. */
+.fx:not([data-touring]) [data-suggest]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px #f2c96a;
+  opacity: 0;
+  animation: fx-breathe 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.fx-trick,
+.fx-pick {
+  position: relative;
+}
+
+@keyframes fx-breathe {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+.fx-send:focus-visible,
+.fx-pick:focus-visible,
+.fx-trick:focus-visible {
+  outline: 2px solid #f2c96a;
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- plate, steps, readout */
+
+.fx .iso-plate {
+  padding-top: 46px;
+  padding-bottom: 44px;
+}
+
+/* Wide screens: the bench stops growing, so the console, steps, bench and narration fit one screen. */
+.fx .iso-svg {
+  max-width: 62rem;
+}
+
+.fx .iso-plate-corner[data-corner="readout"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fx-badge {
+  display: inline-block;
+  min-width: 3.4rem;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fx-status) 16%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fx-status) 55%, transparent) inset;
+  color: var(--fx-status);
+  font: 700 10.5px/1.1 var(--anatomy-mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  transition:
+    background 200ms var(--ease),
+    color 200ms var(--ease);
+}
+
+.fx[data-status="idle"] .fx-badge,
+.fx[data-status="working"] .fx-badge {
+  --fx-status: var(--muted);
+}
+
+.fx-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 auto 6px;
+  padding: 0;
+  max-width: 66rem;
+  list-style: none;
+}
+
+.fx-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line) inset;
+  color: var(--muted);
+  font: 600 12.5px/1.15 var(--sans);
+  transition:
+    background 200ms var(--ease),
+    color 200ms var(--ease),
+    box-shadow 200ms var(--ease),
+    opacity 200ms var(--ease);
+}
+
+.fx-step-dot {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--line);
+  color: var(--text);
+  font: 700 11px/1 var(--sans);
+}
+
+.fx-step-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fx-step-tag {
+  margin-left: auto;
+  color: var(--fx-status);
+  font: 700 10px/1 var(--anatomy-mono);
+  letter-spacing: 0.06em;
+}
+
+.fx-step-tag:empty {
+  display: none;
+}
+
+.fx-step[data-state="active"] {
+  background: var(--gold-soft);
+  box-shadow: 0 0 0 1.5px var(--gold) inset;
+  color: var(--ink);
+}
+
+.fx-step[data-state="active"] .fx-step-dot {
+  background: var(--gold);
+  color: var(--on-gold);
+  animation: fx-pulse 1.1s ease-in-out infinite;
+}
+
+.fx-step[data-state="done"] {
+  color: var(--ink);
+}
+
+.fx-step[data-state="done"] .fx-step-dot {
+  background: var(--hit);
+  color: var(--bg);
+}
+
+.fx-step[data-state="done"] .fx-step-dot,
+.fx-step[data-state="failed"] .fx-step-dot {
+  font-size: 0;
+}
+
+.fx-step[data-state="done"] .fx-step-dot::before {
+  content: "✓";
+  font-size: 11px;
+}
+
+.fx-step[data-state="failed"] {
+  background: color-mix(in srgb, var(--deny) 12%, transparent);
+  box-shadow: 0 0 0 1.5px var(--deny) inset;
+  color: var(--deny);
+}
+
+.fx-step[data-state="failed"] .fx-step-dot {
+  background: var(--deny);
+  color: var(--bg);
+}
+
+.fx-step[data-state="failed"] .fx-step-dot::before {
+  content: "✕";
+  font-size: 11px;
+}
+
+.fx-step[data-state="skipped"] {
+  opacity: 0.45;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.fx-step[data-step="cache"][data-state="done"] {
+  box-shadow: 0 0 0 1.5px var(--fx-status) inset;
+}
+
+@keyframes fx-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 60%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--gold) 0%, transparent);
+  }
+}
+
+.fx-narration {
+  max-width: 46rem;
+  min-height: 3.1em;
+  margin: 4px auto 0;
+  color: var(--ink);
+  font: 500 15px/1.5 var(--sans);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.fx-stage {
+  position: relative;
+  outline: none;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fx-stage:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 6px;
+  border-radius: 8px;
+}
+
+/* ---------------------------------------------------------------- hotspots and their labels */
+
+.fx-hot {
+  fill: transparent;
+  stroke: none;
+  cursor: help;
+  outline: none;
+}
+
+.fx-hot[data-on] {
+  fill: color-mix(in srgb, var(--anatomy-lit) 9%, transparent);
+  stroke: var(--anatomy-lit);
+  stroke-width: 1px;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-tip {
+  position: absolute;
+  z-index: 3;
+  width: max-content;
+  max-width: min(21rem, calc(100% - 12px));
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  background: var(--night-1);
+  box-shadow:
+    0 0 0 1px #f2c96a66,
+    0 16px 34px -14px #000000a0;
+  color: var(--night-text);
+  font: 400 13px/1.45 var(--sans);
+  pointer-events: none;
+}
+
+.fx-tip strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: #f2c96a;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- the drawing's own marks */
+
+.fx-pulse {
+  fill: none;
+  stroke: var(--anatomy-lit);
+  stroke-width: 3.4px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-cavity {
+  fill: var(--fx-cavity);
+  stroke: none;
+}
+
+.fx-card[data-hidden] {
+  opacity: 0;
+}
+
+.fx-card-shadow {
+  filter: blur(2px);
+  opacity: 0.5;
+}
+
+.fx-hole {
+  fill: var(--anatomy-hi);
+}
+
+[data-card-stamp] {
+  opacity: 0;
+  transition: opacity 180ms var(--ease);
+}
+
+[data-card-stamp][data-on] {
+  opacity: 1;
+}
+
+/* The answer's stamp takes its status colour. */
+[data-card-stamp] .iso-line {
+  stroke: var(--fx-status);
+  stroke-width: 1.2px;
+}
+
+/* Lock plugs and hourglass windows are drawn in the plane of the rack's face. */
+.fx-plug {
+  fill: var(--anatomy-top);
+  stroke: var(--anatomy-mid);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-plug-ring {
+  fill: none;
+  stroke: var(--anatomy-faint);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-slot {
+  fill: none;
+  stroke: var(--anatomy-mid);
+  stroke-width: 0.9px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-keyhole {
+  fill: var(--anatomy-mid);
+}
+
+.fx-lock[data-on] .fx-keyhole {
+  fill: var(--anatomy-lit);
+}
+
+.fx-lock[data-on] .fx-slot,
+.fx-lock[data-on] .fx-plug {
+  stroke: var(--anatomy-lit);
+}
+
+.fx-window {
+  fill: var(--fx-cavity);
+  stroke: var(--anatomy-lo);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-glass-fill {
+  fill: var(--fx-glass);
+}
+
+.fx-glass-edge {
+  fill: none;
+  stroke: var(--anatomy-mid);
+  stroke-width: var(--anatomy-weight);
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-cap {
+  fill: none;
+  stroke: var(--anatomy-mid);
+  stroke-width: 1px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Sand runs teal while the answer is fresh, amber once it is only good for serving while it refreshes. */
+.fx-sand {
+  fill: var(--hit);
+  opacity: 0.85;
+}
+
+.fx-glass[data-phase="stale"] .fx-sand {
+  fill: var(--stale);
+}
+
+.fx-glass[data-phase="expired"] .fx-sand {
+  fill: var(--anatomy-mid);
+  opacity: 0.5;
+}
+
+.fx-stream {
+  fill: none;
+  stroke: var(--hit);
+  stroke-width: 0.5px;
+  stroke-dasharray: 0.6 0.9;
+  vector-effect: non-scaling-stroke;
+  animation: fx-fall 600ms linear infinite;
+}
+
+@keyframes fx-fall {
+  to {
+    stroke-dashoffset: -3;
+  }
+}
+
+/* ---------------------------------------------------------------- legend */
+
+.fx .iso-legend {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.fx .iso-keys {
+  gap: 8px 22px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.fx-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.fx-swatch[data-swatch="hit"] {
+  background: var(--hit);
+}
+
+.fx-swatch[data-swatch="miss"] {
+  background: var(--miss);
+}
+
+.fx-swatch[data-swatch="stale"] {
+  background: var(--stale);
+}
+
+.fx-swatch[data-swatch="rejected"] {
+  background: var(--deny);
+}
+
+.fx-announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * Phones: the bench keeps a legible fixed width and the stage scrolls sideways. The live script follows the part that
+ * is acting, and stops following for a few seconds when the reader drags. Edge fades and a hint show it scrolls.
+ */
+.fx-scroll-hint {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .fx-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .fx-console {
+    padding: 0.85rem;
+  }
+
+  .fx-primary,
+  .fx-send {
+    width: 100%;
+  }
+
+  .fx-send {
+    justify-content: center;
+  }
+
+  .fx-picker {
+    flex-wrap: nowrap;
+    width: 100%;
+    margin: 0 -0.85rem;
+    padding: 2px 0.85rem 4px;
+    width: calc(100% + 1.7rem);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .fx-picker::-webkit-scrollbar {
+    display: none;
+  }
+
+  .fx-pick {
+    flex: none;
+  }
+
+  .fx-secondary {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    width: 100%;
+  }
+
+  .fx-trick {
+    justify-content: center;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .fx-trick-term {
+    display: block;
+    margin-top: 2px;
+  }
+
+  .fx .iso-plate {
+    overflow: hidden;
+    padding-top: 40px;
+  }
+
+  .fx-steps {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 3px;
+  }
+
+  .fx-step {
+    flex-direction: column;
+    gap: 3px;
+    padding: 5px 2px;
+    font-size: 9.5px;
+    text-align: center;
+  }
+
+  .fx-step-label {
+    white-space: normal;
+    overflow: visible;
+  }
+
+  .fx-step-tag {
+    margin: 0;
+  }
+
+  .fx .fx-stage {
+    margin: 0 -12px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    touch-action: auto;
+    mask-image: linear-gradient(90deg, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
+  }
+
+  .fx .fx-stage::-webkit-scrollbar {
+    display: none;
+  }
+
+  .fx .fx-stage .iso-svg {
+    width: 860px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .fx-scroll-hint {
+    display: block;
+    margin: 4px 0 0;
+    color: var(--muted);
+    font: 10.5px/1.2 var(--anatomy-mono);
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .fx-narration {
+    font-size: 14px;
+  }
+
+  .fx .iso-plate-corner[data-corner="hint"] {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-stream,
+  .fx-step[data-state="active"] .fx-step-dot,
+  .fx [data-suggest]::after {
+    animation: none;
+  }
+
+  [data-card-stamp],
+  .fx-step {
+    transition: none;
+  }
+}

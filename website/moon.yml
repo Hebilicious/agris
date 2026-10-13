@@ -1,0 +1,63 @@
+language: "typescript"
+layer: "application"
+stack: "frontend"
+
+project:
+  title: "Agris Website"
+  description: "The Agris website and llms.txt: an Astro static site published as static assets on an origin of its own, apart from the API."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# The build runs every example query through `@agris/core`'s public protocol against the committed client schema; both
+# reach the hash through the `agris-sources` group (.moon/tasks/sources.yml), not through `deps`.
+tasks:
+  typecheck:
+    description: "Type-check the site's TypeScript: the figure model, timeline, art and live script, and the vendored kit."
+    script: "astro sync && tsc -p tsconfig.json --noEmit"
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*", "vendor/**/*", "astro.config.ts", "tsconfig.json", "package.json", "@group(agris-sources)"]
+
+  figure-audit:
+    description: "Prove Fig 1's line to Pearl Abyss with the anatomy audit: clearance, mounts, support, depth order."
+    script: "node src/figure/figure-audit.ts"
+    inputs: ["src/figure/**/*", "vendor/**/*", "package.json", "@group(agris-sources)"]
+
+  live-check:
+    description: "Check the live examples in Node: how every kind of answer from the demo is sorted, and that the result panel prints JSON exactly as JSON.stringify does."
+    script: "node src/checks/live-check.ts"
+    inputs: ["src/checks/live-check.ts", "src/live/**/*", "package.json"]
+
+  links-check:
+    description: "Check the built page's links: every outbound link opens in a new tab with noopener and noreferrer, none points at a file in the repository, and none reaches the API by a path on the site's own origin."
+    script: "node src/checks/links-check.ts dist/index.html"
+    deps: ["build"]
+    inputs: ["src/checks/**/*", "dist/index.html", "package.json"]
+
+  build:
+    description: "Build the static site into `website/dist`, failing if an example query is refused by the public gateway."
+    command: "astro"
+    args: ["build"]
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*", "vendor/**/*", "public/**/*", "astro.config.ts", "tsconfig.json", "package.json", "@group(agris-sources)"]
+    outputs: ["dist"]
+
+  record-figure:
+    description: "Re-record the README's Fig 1 GIF (`docs/assets/fig1.gif`) from the built site in dark mode: a MISS, a HIT and a flood's 429. Needs ffmpeg and playwright-core's Chromium (`pnpm --filter @agris/website exec playwright-core install chromium-headless-shell`)."
+    script: "node src/tools/record-figure.ts"
+    deps: ["build"]
+    options:
+      cache: false
+      runInCI: "skip"
+
+  dev:
+    description: "Serve the site locally with live reload on port 4321."
+    command: "astro"
+    args: ["dev", "--port", "4321"]
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    preset: "server"

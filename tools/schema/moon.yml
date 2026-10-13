@@ -1,0 +1,51 @@
+language: "typescript"
+layer: "tool"
+stack: "backend"
+
+project:
+  title: "Agris Schema Tools"
+  description: "Generate and verify the committed Federation, client-schema, introspection and persisted-operation artifacts."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# The tools run the compiled subgraph and core packages, so every task depends on their builds.
+tasks:
+  typecheck:
+    description: "Type-check the schema tools."
+    command: "tsc"
+    args: ["-p", "tsconfig.json", "--noEmit"]
+    deps: ["^:build"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json", "@group(agris-sources)"]
+
+  build:
+    description: "Compile the schema tools."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:build"]
+    inputs: ["src/**/*.ts", "package.json", "tsconfig.json", "@group(agris-sources)"]
+    outputs: ["dist/**/*"]
+
+  generate:
+    description: "Generate the subgraph SDL, composed supergraph, client SDL, introspection and persisted-operation artifacts."
+    command: "vitest"
+    args: ["run", "src/generate.test.ts", "--config", "vitest.config.ts"]
+    deps: ["build"]
+    inputs: ["src/**/*.ts", "vitest.config.ts", "package.json", "@group(agris-sources)"]
+    outputs: ["artifacts/**/*"]
+    options:
+      cache: false
+
+  check:
+    description: "Validate the committed client schema and every persisted operation against it."
+    command: "node"
+    args: ["dist/check.js"]
+    deps: ["build"]
+    inputs: ["dist/check.js", "artifacts/**/*", "@group(agris-sources)"]
+
+  generated-check:
+    description: "Regenerate the schema artifacts in a temporary directory and compare them byte for byte with the committed ones."
+    command: "vitest"
+    args: ["run", "src/check-generated.test.ts", "--config", "vitest.config.ts"]
+    deps: ["build"]
+    inputs: ["src/**/*.ts", "vitest.config.ts", "package.json", "artifacts/**/*", "@group(agris-sources)"]

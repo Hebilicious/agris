@@ -1,0 +1,9 @@
+javascript:
+  dedupeOnLockfileChange: true
+  inferTasksFromScripts: false
+  packageManager: pnpm
+  syncProjectWorkspaceDependencies: true
+
+node: {}
+
+pnpm: {}

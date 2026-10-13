@@ -1,0 +1,22 @@
+language: "typescript"
+layer: "application"
+stack: "backend"
+
+project:
+  title: "Agris Catalog Worker"
+  description: "The Agris catalog subgraph Worker serving an immutable in-memory catalog."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+# Inputs stay inside this project so it works unchanged when the repository is mounted inside another workspace.
+# Upstream packages reach this project's hashes through `^:` dependencies. Every deployment of this Worker is an Alchemy
+# stage (`infra/`): the self-hosted and demo stages host its code in an Effect Worker, and the smoke stage deploys this
+# entrypoint as it is, the way a host that mounts Agris does.
+tasks:
+  typecheck:
+    description: "Type-check the Agris catalog Worker."
+    command: "tsc"
+    args: ["-p", "tsconfig.json"]
+    deps: ["^:typecheck"]
+    inputs: ["src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "@group(agris-sources)"]

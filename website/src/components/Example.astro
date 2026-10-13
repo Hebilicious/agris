@@ -1,0 +1,54 @@
+---
+import { durationOf } from "../figure/model.ts";
+import type { CheckedExample } from "../queries/examples-policy";
+import { demoGraphiqlLink, NEW_TAB } from "../site.ts";
+import Icon from "./Icon.astro";
+import LiveQuery from "./LiveQuery.astro";
+import Snippet from "./Snippet.astro";
+
+interface Props {
+  example: CheckedExample;
+}
+
+const { example } = Astro.props;
+// Copy as curl targets the reader's own gateway, as the README does; the hosted demo is only for looking around.
+const SELF_HOSTED_ORIGIN = "https://agris.<your-subdomain>.workers.dev";
+
+const graphiql = demoGraphiqlLink(example.query);
+const body = JSON.stringify({ query: example.query });
+// Single-quoted for the shell, so only single quotes need escaping.
+const curl = `AGRIS='${SELF_HOSTED_ORIGIN}'   # your gateway: workers.dev or any hostname you added
+curl -s "$AGRIS/graphql" \\
+  -H 'content-type: application/json' \\
+  --data '${body.replaceAll("'", `'"'"'`)}'`;
+
+const yours =
+  example.policy.mode === "no-store"
+    ? "Never stored"
+    : `Fresh for ${durationOf(example.policy.maxAge)}, then ${durationOf(example.policy.staleWhileRevalidate)} while refreshing`;
+const demo = example.demoPolicy.mode === "no-store" ? "Never stored" : `Fresh for ${durationOf(example.demoPolicy.maxAge)}`;
+const upstream =
+  example.upstreamCalls === 0
+    ? "None: answered from memory"
+    : `${example.upstreamCalls} Pearl Abyss ${example.upstreamCalls === 1 ? "call" : "calls"} on a miss`;
+---
+
+<article class="example" id={`example-${example.id}`} data-live-card>
+  <header>
+    <h3>{example.title}</h3>
+    <p>{example.text}</p>
+  </header>
+  <dl class="example-meta">
+    <div><dt>Default cache</dt><dd>{yours}</dd></div>
+    <div><dt>Shared demo</dt><dd>{demo}</dd></div>
+    <div><dt>Upstream</dt><dd>{upstream}</dd></div>
+  </dl>
+  <Snippet code={example.query} lang="graphql" label="Query" />
+  <LiveQuery query={example.query} id={example.id} label={example.title}>
+    <a class="button small" href={graphiql} {...NEW_TAB}>
+      Open in GraphiQL
+      <Icon name="external" size={15} />
+    </a>
+    <button type="button" class="button small" data-copy={curl}>Copy as curl</button>
+  </LiveQuery>
+</article>
