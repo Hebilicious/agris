@@ -25,3 +25,10 @@ Feature: Pearl Abyss market protocol capabilities
     When a summary row contains an unrecognized extra position
     And a compressed response is truncated
     Then both Pearl Abyss responses are rejected as invalid upstream data
+
+  @scenario:huffman-declared-output-ceiling @provenance:minimal @i0
+  Scenario: A compressed response that declares more output than the decoder allows is rejected before decoding
+    When a 32-byte compressed response declares 200000000 copies of one character
+    Then the compressed response is rejected as invalid upstream data without being expanded
+    And the decoder's output ceiling is eight times the Pearl Abyss response byte ceiling
+    And a 32-byte compressed response that declares exactly that ceiling decodes in full

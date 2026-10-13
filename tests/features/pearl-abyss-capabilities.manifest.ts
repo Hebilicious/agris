@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 
 import {
   buildPearlAbyssRequest,
+  decodePearlAbyssHuffman,
   decodePearlAbyssPayload,
   decodePearlAbyssResponseBody,
+  MAXIMUM_PEARL_ABYSS_HUFFMAN_OUTPUT_BYTES,
+  MAXIMUM_PEARL_ABYSS_RESPONSE_BYTES,
   type PearlAbyssCapability,
   type PearlAbyssCapabilityResponse,
   type PearlAbyssProtocolResult,
@@ -13,12 +16,19 @@ import {
   observedBiddingInfoCompressedBase64,
   pearlAbyssProtocolFixtures,
 } from "./fixtures/pearl-abyss/protocol-fixtures.ts";
-import { noStepArguments, step, type ExecutableFeatureManifest, type StepDefinition } from "../support/manifest.ts";
+import {
+  integerStepArgument,
+  noStepArguments,
+  step,
+  type ExecutableFeatureManifest,
+  type StepDefinition,
+} from "../support/manifest.ts";
 
 interface PearlAbyssCapabilitiesWorld {
   decoded?: ReadonlyMap<PearlAbyssCapability, PearlAbyssCapabilityResponse>;
   observedOrderBook?: PearlAbyssCapabilityResponse;
   invalidResults?: readonly PearlAbyssProtocolResult<unknown>[];
+  inflatedResult?: PearlAbyssProtocolResult<string>;
 }
 
 const requestInputs = [
@@ -176,6 +186,27 @@ const steps: readonly StepDefinition<PearlAbyssCapabilitiesWorld>[] = [
       if (!result.ok) assert.equal(result.error.code, "upstream/invalid-response");
     }
   }),
+  step("a 32-byte compressed response declares {int} copies of one character", integerStepArgument, (world, copies) => {
+    world.inflatedResult = decodePearlAbyssHuffman(singleSymbolHuffmanBody(copies));
+  }),
+  step(
+    "the compressed response is rejected as invalid upstream data without being expanded",
+    noStepArguments,
+    (world) => {
+      const result = world.inflatedResult;
+      assert.ok(result);
+      if (result.ok) assert.fail(`The decoder expanded the body to ${result.value.length} characters`);
+      assert.equal(result.error.code, "upstream/invalid-response");
+    },
+  ),
+  step("the decoder's output ceiling is eight times the Pearl Abyss response byte ceiling", noStepArguments, () => {
+    assert.equal(MAXIMUM_PEARL_ABYSS_HUFFMAN_OUTPUT_BYTES, 8 * MAXIMUM_PEARL_ABYSS_RESPONSE_BYTES);
+  }),
+  step("a 32-byte compressed response that declares exactly that ceiling decodes in full", noStepArguments, () => {
+    const result = decodePearlAbyssHuffman(singleSymbolHuffmanBody(MAXIMUM_PEARL_ABYSS_HUFFMAN_OUTPUT_BYTES));
+    assert.ok(result.ok);
+    assert.equal(result.value.length, MAXIMUM_PEARL_ABYSS_HUFFMAN_OUTPUT_BYTES);
+  }),
 ];
 
 export const pearlAbyssCapabilitiesFeature: ExecutableFeatureManifest<PearlAbyssCapabilitiesWorld> = {
@@ -184,6 +215,21 @@ export const pearlAbyssCapabilitiesFeature: ExecutableFeatureManifest<PearlAbyss
   createWorld: () => ({}),
   steps,
 };
+
+/**
+ * The smallest body the Huffman format allows: a file header, one frequency entry and a size header, and no encoded
+ * bits. A single-symbol table decodes to its one character, repeated as often as the size header declares.
+ */
+function singleSymbolHuffmanBody(copies: number): Uint8Array {
+  const bytes = new Uint8Array(32);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, bytes.byteLength, true);
+  view.setUint32(8, 1, true);
+  view.setUint32(12, copies, true);
+  view.setUint8(16, "a".charCodeAt(0));
+  view.setUint32(28, copies, true);
+  return bytes;
+}
 
 function required<Value>(result: PearlAbyssProtocolResult<Value>): Value {
   if (!result.ok) assert.fail(result.error.message);

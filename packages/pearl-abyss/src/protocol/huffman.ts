@@ -11,6 +11,17 @@ const HEADER_BYTES = 12;
 const FREQUENCY_ENTRY_BYTES = 8;
 const SIZE_HEADER_BYTES = 12;
 
+/** Turns the decoder's output bytes into text: every symbol is ASCII, which UTF-8 decodes byte for byte. */
+const ASCII = new TextDecoder("utf-8", { fatal: true });
+
+/**
+ * The most characters a Huffman body may decode to: 8 MiB, eight times the 1 MiB response ceiling
+ * (`MAXIMUM_PEARL_ABYSS_RESPONSE_BYTES`). Every symbol of a multi-symbol table takes at least one encoded bit, so no
+ * body under that ceiling legitimately decodes to more. A single-symbol table takes no bits at all, so its size header
+ * alone sets its output; without this ceiling a 32-byte body could ask for 4 GiB.
+ */
+export const MAXIMUM_PEARL_ABYSS_HUFFMAN_OUTPUT_BYTES = 8 * 1_024 * 1_024;
+
 export function decodePearlAbyssHuffman(bytes: Uint8Array): PearlAbyssProtocolResult<string> {
   try {
     return pearlAbyssProtocolSuccess(decode(bytes));
@@ -50,8 +61,8 @@ function decode(bytes: Uint8Array): string {
     characters.add(character);
     expectedFrequencies.set(character, frequency);
     expectedOutputBytesFromFrequencies += frequency;
-    if (!Number.isSafeInteger(expectedOutputBytesFromFrequencies)) {
-      throw invalidHuffman("Huffman output size is unsafe");
+    if (expectedOutputBytesFromFrequencies > MAXIMUM_PEARL_ABYSS_HUFFMAN_OUTPUT_BYTES) {
+      throw invalidHuffman("Huffman output exceeds the decoder's ceiling");
     }
     heap.push({ character, frequency, left: null, right: null });
   }
@@ -84,8 +95,12 @@ function decode(bytes: Uint8Array): string {
     return String.fromCharCode(root.character).repeat(expectedOutputBytes);
   }
 
-  const output: string[] = [];
-  const actualFrequencies = new Map<number, number>();
+  // The loop writes one byte per symbol into a buffer of the declared size, which the ceiling above already bounds,
+  // and fails before writing past it. Every symbol is ASCII (the table refuses anything above 0x7f), so the bytes are
+  // the text.
+  const output = new Uint8Array(expectedOutputBytes);
+  const actualFrequencies = new Uint32Array(0x80);
+  let written = 0;
   let current = root;
   for (let bitIndex = 0; bitIndex < encodedBits; bitIndex += 1) {
     const byte = view.getUint8(payloadOffset + Math.floor(bitIndex / 8));
@@ -95,21 +110,22 @@ function decode(bytes: Uint8Array): string {
     current = next;
     if (current.left === null && current.right === null) {
       if (current.character === null) throw invalidHuffman("Huffman leaf has no character");
-      output.push(String.fromCharCode(current.character));
-      actualFrequencies.set(current.character, (actualFrequencies.get(current.character) ?? 0) + 1);
-      if (output.length > expectedOutputBytes) throw invalidHuffman("Huffman output exceeds its declared size");
+      if (written === expectedOutputBytes) throw invalidHuffman("Huffman output exceeds its declared size");
+      output[written] = current.character;
+      written += 1;
+      actualFrequencies[current.character] = (actualFrequencies[current.character] ?? 0) + 1;
       current = root;
     }
   }
-  if (current !== root || output.length !== expectedOutputBytes) {
+  if (current !== root || written !== expectedOutputBytes) {
     throw invalidHuffman("Huffman output does not match its declared size");
   }
   for (const [character, frequency] of expectedFrequencies) {
-    if (actualFrequencies.get(character) !== frequency) {
+    if (actualFrequencies[character] !== frequency) {
       throw invalidHuffman("Huffman output does not match its frequency table");
     }
   }
-  return output.join("");
+  return ASCII.decode(output);
 }
 
 class FrequencyHeap {
