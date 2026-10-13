@@ -13,6 +13,7 @@ import {
   type BudgetedSubgraphServiceBinding,
 } from "../../apps/gateway/src/index.ts";
 import { admissionObjectName, type AdmissionNamespacePort } from "../../apps/gateway/src/admission.ts";
+import { graphiqlContentSecurityPolicy, RenderedPages } from "../../apps/gateway/src/graphiql-page.ts";
 import { publicAgrisProxyWorker, type PublicGatewayEnv, type RateLimitPort } from "../../apps/gateway/src/public.ts";
 
 import {
@@ -70,6 +71,15 @@ const UNCACHED_CLIENT = "198.51.100.28";
 const STALE_CLIENT = "198.51.100.29";
 const EVICTED_CLIENT = "198.51.100.30";
 const RATE_CHANGE_CLIENT = "198.51.100.31";
+const GRAPHIQL_RELEASE_URL = "https://unpkg.com/@graphql-yoga/graphiql@5.0.0/dist/";
+/** A page whose inline scripts are written every way a template may write them, beside an external script. */
+const ATTRIBUTED_SCRIPTS_PAGE = [
+  "<!doctype html><title>GraphiQL</title>",
+  `<script type="module" src="${GRAPHIQL_RELEASE_URL}graphiql.js"></script>`,
+  "<script>globalThis.plain = 1;</script>",
+  '<script type="module">globalThis.module = 2;</script>',
+  "<SCRIPT nonce=x data-src=none>globalThis.attributed = 3;</SCRIPT>",
+].join("\n");
 
 /** Market item IDs no other case asks for, so each query is a cache miss and a Pearl Abyss read. */
 let lastMarketItem = 31_000;
@@ -333,6 +343,7 @@ const steps: readonly StepDefinition<PublicGatewayWorld>[] = [
     assert.equal(page.status, 200);
     assert.match(page.headers.get("Content-Type") ?? "", /^text\/html/u);
     const html = await page.text();
+    world.bodies = [html];
     assert.match(html, /<title>[^<]*GraphiQL[^<]*<\/title>/u);
     assert.match(html, /"endpoint":"\/graphql"/u);
     // The tab shows Agris's icon, the website's own favicon, and no other icon.
@@ -685,6 +696,83 @@ const steps: readonly StepDefinition<PublicGatewayWorld>[] = [
     assert.ok(world.failure instanceof TypeError, JSON.stringify(world.responses?.map(({ status }) => status)));
     assert.match(world.failure.message, /ADMISSION/u);
   }),
+  step(
+    "the page may run only its own scripts and the pinned GraphiQL release, and no other site may frame it",
+    noStepArguments,
+    async (world) => {
+      const page = requiredResponse(world, 0);
+      const policy = contentSecurityPolicy(page.headers.get("Content-Security-Policy"));
+      for (const directive of ["default-src", "frame-ancestors", "base-uri", "object-src", "form-action"]) {
+        assert.deepEqual(policy.get(directive), ["'none'"], directive);
+      }
+      const scripts = policy.get("script-src") ?? [];
+      assert.ok(!scripts.includes("'unsafe-inline'") && !scripts.includes("'unsafe-eval'"), scripts.join(" "));
+      // Every inline script on the page is allowed by its hash, and every other script source is the pinned release.
+      const html = world.bodies?.[0];
+      assert.ok(typeof html === "string", "The GraphiQL page was not read");
+      for (const hash of await inlineScriptHashesOf(html)) assert.ok(scripts.includes(hash), `${hash} is not allowed`);
+      for (const source of scripts.filter((value) => !value.startsWith("'sha256-"))) {
+        assert.match(source, /^https:\/\/unpkg\.com\/@graphql-yoga\/graphiql@[0-9]+\.[0-9]+\.[0-9]+\/dist\/$/u);
+      }
+      const allowed = [...scripts, ...(policy.get("style-src") ?? [])];
+      for (const source of await externalSourcesOf(html)) {
+        assert.ok(
+          allowed.some((prefix) => prefix.startsWith("https://") && source.startsWith(prefix)),
+          `${source} is not allowed`,
+        );
+      }
+      assert.equal(page.headers.get("X-Content-Type-Options"), "nosniff");
+      assert.equal(page.headers.get("Referrer-Policy"), "no-referrer");
+      assert.equal(page.headers.get("X-Frame-Options"), "DENY");
+    },
+  ),
+  step(
+    "the GraphiQL policy is made for a page whose inline scripts carry attributes beside an external script",
+    noStepArguments,
+    async (world) => {
+      const policy = await graphiqlContentSecurityPolicy(ATTRIBUTED_SCRIPTS_PAGE);
+      world.bodies = [ATTRIBUTED_SCRIPTS_PAGE, policy];
+    },
+  ),
+  step(
+    "every inline script on that page has its hash in the policy, and nothing else is hashed",
+    noStepArguments,
+    async (world) => {
+      const [html, header] = world.bodies ?? [];
+      assert.ok(typeof html === "string" && typeof header === "string");
+      const hashes = (contentSecurityPolicy(header).get("script-src") ?? []).filter((source) =>
+        source.startsWith("'sha256-"),
+      );
+      const inline = await inlineScriptHashesOf(html);
+      assert.equal(inline.length, 3);
+      assert.deepEqual([...hashes].sort(), [...inline].sort());
+    },
+  ),
+  step("a GraphiQL page fails to render once and is then requested again", noStepArguments, async (world) => {
+    let renders = 0;
+    const pages = new RenderedPages(async (key: string) => {
+      renders += 1;
+      if (renders === 1) throw new TypeError(`Rendering ${key} failed`);
+      return { html: `<title>${key}</title>`, contentSecurityPolicy: "default-src 'none'" };
+    });
+    const first = await pages.get("page").then(
+      () => "rendered",
+      (error: unknown) => String(error),
+    );
+    // Let the failed render settle, as a later request in the same isolate would.
+    await Promise.resolve();
+    const second = await pages.get("page");
+    world.bodies = [first, second.html, renders];
+  }),
+  step("the second request renders the page afresh and gets it", noStepArguments, (world) => {
+    assert.deepEqual(world.bodies, ["TypeError: Rendering page failed", "<title>page</title>", 2]);
+  }),
+  step("every response forbids content sniffing and sends no referrer", noStepArguments, (world) => {
+    for (const response of requiredResponses(world)) {
+      assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+      assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
+    }
+  }),
 ];
 
 const decodeIntrospectionBody = Schema.decodeUnknownSync(
@@ -995,6 +1083,57 @@ async function assertMarketRefused(response: Response): Promise<void> {
     body.errors.some(({ extensions }) => extensions.code === "RATE_LIMITED"),
     JSON.stringify(body),
   );
+}
+
+/** A Content-Security-Policy header as its directives, each with its sources. */
+function contentSecurityPolicy(header: string | null): ReadonlyMap<string, readonly string[]> {
+  assert.ok(header, "The response has no Content-Security-Policy");
+  const directives = new Map<string, readonly string[]>();
+  for (const directive of header.split(";")) {
+    const [name, ...sources] = directive.trim().split(/\s+/u);
+    if (name !== undefined && name !== "") directives.set(name, sources);
+  }
+  return directives;
+}
+
+/** The CSP hash source of every inline `<script>` on the page, read by Cloudflare's own HTML parser. */
+async function inlineScriptHashesOf(html: string): Promise<string[]> {
+  const scripts: string[] = [];
+  let inline = false;
+  const rewriter = new HTMLRewriter().on("script", {
+    element(script) {
+      inline = script.getAttribute("src") === null;
+      if (inline) scripts.push("");
+    },
+    text(chunk) {
+      if (inline) scripts[scripts.length - 1] += chunk.text;
+    },
+  });
+  await rewriter.transform(new Response(html)).text();
+  return Promise.all(
+    scripts.map(async (script) => {
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(script));
+      return `'sha256-${btoa(String.fromCharCode(...new Uint8Array(digest)))}'`;
+    }),
+  );
+}
+
+/** The `src` of every external script and the `href` of every stylesheet on the page. */
+async function externalSourcesOf(html: string): Promise<string[]> {
+  const sources: string[] = [];
+  const rewriter = new HTMLRewriter()
+    .on("script[src]", {
+      element(script) {
+        sources.push(script.getAttribute("src") ?? "");
+      },
+    })
+    .on("link[rel=stylesheet]", {
+      element(link) {
+        sources.push(link.getAttribute("href") ?? "");
+      },
+    });
+  await rewriter.transform(new Response(html)).text();
+  return sources;
 }
 
 function requiredResponses(world: PublicGatewayWorld): readonly Response[] {
