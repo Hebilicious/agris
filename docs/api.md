@@ -92,8 +92,11 @@ Request-level failures have a body of the form `{"errors":[{"message":"..."}]}` 
 
 Field-level errors carry a code in `extensions.code`:
 
-- `BAD_USER_INPUT`: `searchItems` got a query shorter than 3 characters after folding, longer than the longest item name, or `first` outside 1 to 100. No partial data.
+- `BAD_USER_INPUT` from the catalog: `searchItems` got a query shorter than 3 characters after folding, longer than the longest item name, or `first` outside 1 to 100, with no partial data; or `item(id:)` or `items(ids:)` got an item ID that is not a positive whole number. The message says which.
+- `BAD_USER_INPUT` from the market: an item ID that is not a positive whole number, or an enhancement level outside 0 to 20. The message says which.
 - `QUERY_BUDGET_EXCEEDED`: a market-summary batch asked for more than 100 distinct items, the request needed more than 6 distinct summary batches, or it needed more subgraph calls and Pearl Abyss requests than the deployment's subrequest budget (50 by default). The affected nullable fields are `null`; sibling data survives. Ask for fewer markets, items or categories in one query.
+- `UPSTREAM_UNAVAILABLE`: Pearl Abyss could not be reached, did not answer in time, or sent an answer that could not be read, for this field. Other fields keep their data.
+- `INTERNAL_SERVER_ERROR`: anything else went wrong in a subgraph. The message is always "The market subgraph could not answer this field." or "The catalog subgraph could not answer this field.": internal error text never leaves a subgraph.
 
 Pearl Abyss returns one ambiguous answer for both "unknown item" and "no market data", so Agris reports both as `isListed: false`.
 

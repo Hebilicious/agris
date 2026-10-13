@@ -8,7 +8,7 @@ import DataloaderPlugin from "@pothos/plugin-dataloader";
 import DirectivePlugin from "@pothos/plugin-directives";
 import FederationPlugin from "@pothos/plugin-federation";
 import { GraphQLError, parse } from "graphql";
-import { createYoga } from "graphql-yoga";
+import { createYoga, maskError as maskWithYoga } from "graphql-yoga";
 
 import {
   requestScopedMarketReader,
@@ -119,7 +119,7 @@ export function createMarketSubgraph(input?: MarketSubgraphInput): MarketSubgrap
     schema,
     context: ({ reader, clock }) => ({
       ...initContextCache(),
-      reader: requestScopedMarketReader(budgetErrorsAsQueryErrors(reader)),
+      reader: requestScopedMarketReader(readErrorsAsQueryErrors(reader)),
       clock,
       observations: new Map(),
     }),
@@ -127,7 +127,7 @@ export function createMarketSubgraph(input?: MarketSubgraphInput): MarketSubgrap
     graphiql: false,
     landingPage: false,
     logging: false,
-    maskedErrors: false,
+    maskedErrors: { maskError: maskMarketError },
   });
   return {
     schema,
@@ -140,20 +140,33 @@ export function createMarketSubgraph(input?: MarketSubgraphInput): MarketSubgrap
 }
 
 /**
- * The reader, with a Pearl Abyss read the invocation budget refused reported as `QUERY_BUDGET_EXCEEDED`: the query asks
- * for more Pearl Abyss requests than the deployment's subrequest limit allows, which the caller fixes by asking less.
+ * The codes a market error reaches a caller with, each from `marketError`. Every other error is masked to
+ * `INTERNAL_SERVER_ERROR`, so no internal text, such as how a Pearl Abyss answer failed to decode, leaves the subgraph.
+ *
+ * - `BAD_USER_INPUT`: the query is wrong; the message says what to change.
+ * - `QUERY_BUDGET_EXCEEDED`: the query asks for more than the deployment's budget allows; ask for less in one query.
+ * - `UPSTREAM_UNAVAILABLE`: Pearl Abyss could not be reached, did not answer in time, or sent an unreadable answer.
  */
-function budgetErrorsAsQueryErrors(reader: MarketReader): MarketReader {
+type MarketErrorCode = "BAD_USER_INPUT" | "QUERY_BUDGET_EXCEEDED" | "UPSTREAM_UNAVAILABLE";
+
+const INTERNAL_ERROR_MESSAGE = "The market subgraph could not answer this field.";
+
+/**
+ * The errors `marketError` made. The mask recognizes them by identity rather than by class, because graphql-js can
+ * wrap an error in a `GraphQLError` from another copy of graphql than the one this module imports.
+ */
+const MARKET_ERRORS = new WeakSet<Error>();
+
+/**
+ * The reader, with each way a Pearl Abyss read can fail reported as a `MarketErrorCode` with a fixed message.
+ * A read the invocation budget refused is `QUERY_BUDGET_EXCEEDED`: the query asks for more Pearl Abyss requests than
+ * the deployment's subrequest limit allows, which the caller fixes by asking less. Any other failed read is
+ * `UPSTREAM_UNAVAILABLE`, without the reason, which is about Pearl Abyss's internals.
+ */
+function readErrorsAsQueryErrors(reader: MarketReader): MarketReader {
   const guard = <Value>(read: () => Promise<Value>): Promise<Value> =>
     read().catch((error: unknown) => {
-      if (error instanceof PearlAbyssUpstreamError && error.code === "upstream/budget-exceeded") {
-        throw new GraphQLError(
-          "The query needs more Pearl Abyss requests than this deployment's subrequest limit allows. Ask for fewer " +
-            "markets, items or categories in one query.",
-          { extensions: { code: "QUERY_BUDGET_EXCEEDED" } },
-        );
-      }
-      throw error;
+      throw readErrorAsQueryError(error);
     });
   return {
     readSummaries: (input) => guard(() => reader.readSummaries(input)),
@@ -164,6 +177,60 @@ function budgetErrorsAsQueryErrors(reader: MarketReader): MarketReader {
     readHotItems: (input) => guard(() => reader.readHotItems(input)),
     readRegistrations: (input) => guard(() => reader.readRegistrations(input)),
   };
+}
+
+function readErrorAsQueryError(error: unknown): unknown {
+  if (!(error instanceof PearlAbyssUpstreamError)) return error;
+  switch (error.code) {
+    case "upstream/budget-exceeded":
+      return marketError(
+        "The query needs more Pearl Abyss requests than this deployment's subrequest limit allows. Ask for fewer " +
+          "markets, items or categories in one query.",
+        "QUERY_BUDGET_EXCEEDED",
+      );
+    case "upstream/invalid-response":
+    case "upstream/rate-limited":
+    case "upstream/timeout":
+    case "upstream/unavailable":
+      return marketError("The Central Market could not be read.", "UPSTREAM_UNAVAILABLE");
+  }
+}
+
+/** An error a caller may read: its message is written for them, and its code says what to do. */
+function marketError(message: string, code: MarketErrorCode): GraphQLError {
+  const error = new GraphQLError(message, { extensions: { code } });
+  MARKET_ERRORS.add(error);
+  return error;
+}
+
+/** A client argument the market cannot use, as a `BAD_USER_INPUT` error that says what is wrong with it. */
+function clientInput<Value>(parse: () => Value): Value {
+  try {
+    return parse();
+  } catch (error: unknown) {
+    if (error instanceof TypeError || error instanceof RangeError) throw marketError(error.message, "BAD_USER_INPUT");
+    throw error;
+  }
+}
+
+/**
+ * The market subgraph's error mask. An error from `marketError` passes, wherever graphql-js wrapped it. Everything
+ * else goes through Yoga's own mask, which passes the errors graphql-js raises about the request itself (they describe
+ * only the public schema) and replaces any other with `INTERNAL_SERVER_ERROR` and one fixed message, keeping its
+ * location and path. It never adds the original error, whatever `NODE_ENV` says.
+ */
+function maskMarketError(error: unknown): Error {
+  if (wrapsMarketError(error)) return error;
+  return maskWithYoga(error, INTERNAL_ERROR_MESSAGE, false);
+}
+
+function wrapsMarketError(error: unknown): error is Error {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (MARKET_ERRORS.has(current)) return true;
+    current = "originalError" in current ? current.originalError : undefined;
+  }
+  return false;
 }
 
 export function subgraphSchemaFromSdl(sdl: string) {
@@ -263,7 +330,7 @@ function createMarketSchema() {
           cacheKeyFn: (key: ItemMarketSummaryKey) => `${key.locale}:${key.itemId}`,
         },
         load: (keys, context, arguments_) => loadItemMarketSummaries(keys, arguments_.region, context),
-        resolve: (item) => ({ itemId: positiveItemId(item.id), locale: item.locale }),
+        resolve: (item) => ({ itemId: clientInput(() => positiveItemId(item.id)), locale: item.locale }),
       }),
     }),
   });
@@ -416,7 +483,7 @@ function createMarketSchema() {
             region: item.region,
             locale: item.locale,
             itemId: item.itemId,
-            enhancementLevel: enhancementLevel(arguments_.enhancementLevel ?? 0),
+            enhancementLevel: clientInput(() => enhancementLevel(arguments_.enhancementLevel ?? 0)),
           }),
       }),
       priceHistory: field.field({
@@ -437,7 +504,7 @@ function createMarketSchema() {
             region: item.region,
             locale: item.locale,
             itemId: item.itemId,
-            enhancementLevel: enhancementLevel(arguments_.enhancementLevel ?? 0),
+            enhancementLevel: clientInput(() => enhancementLevel(arguments_.enhancementLevel ?? 0)),
           }),
       }),
     }),
@@ -508,7 +575,7 @@ function createMarketSchema() {
           ids: field.arg.idList({ required: true, description: "Item IDs: positive whole numbers, as strings." }),
         },
         resolve: (market, arguments_, context) => {
-          const itemIds = arguments_.ids.map(positiveItemId);
+          const itemIds = clientInput(() => arguments_.ids.map(positiveItemId));
           // Captured here, before any read these items lead to, since a listing-only query reads no summary.
           market.observation.capture();
           // One batched summary read serves every item, and only once a summary field asks for it: a query that
@@ -632,9 +699,10 @@ async function loadItemMarketSummaries(
 
   const itemIds = [...new Set(keys.map((key) => key.itemId))];
   if (itemIds.length > MARKET_SUMMARY_BATCH_LIMIT) {
-    throw new GraphQLError(`Market summary batch exceeds the ${MARKET_SUMMARY_BATCH_LIMIT}-Item limit`, {
-      extensions: { code: "QUERY_BUDGET_EXCEEDED" },
-    });
+    throw marketError(
+      `Market summary batch exceeds the ${MARKET_SUMMARY_BATCH_LIMIT}-Item limit`,
+      "QUERY_BUDGET_EXCEEDED",
+    );
   }
 
   const observation = observationFor(context, region, locale);
@@ -643,9 +711,9 @@ async function loadItemMarketSummaries(
     summaries = await observation.beforeRead(() => context.reader.readSummaries({ region, locale, itemIds }));
   } catch (error: unknown) {
     if (error instanceof MarketSummaryBudgetExceededError) {
-      throw new GraphQLError(
+      throw marketError(
         `Market summary operation exceeds this deployment's limit of ${error.limit} distinct batches`,
-        { extensions: { code: "QUERY_BUDGET_EXCEEDED" } },
+        "QUERY_BUDGET_EXCEEDED",
       );
     }
     throw error;
