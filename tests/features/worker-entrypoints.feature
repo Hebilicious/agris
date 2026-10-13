@@ -27,6 +27,11 @@ Feature: Central Market Worker entrypoints
     When the real Agris Proxy queries two market items through a market Worker that binds neither PA_RATE_LIMITER nor PA_MAX_CONCURRENT_REQUESTS
     Then both market items come back with their Pearl Abyss summary
 
+  @scenario:worker-entrypoints-deployment-rate-allowance @provenance:spec @i1
+  Scenario: The coordinators of every Pearl Abyss host spend one rate allowance for the whole deployment
+    When the real Agris Proxy queries an EU and an NA market item through a market Worker whose PA_RATE_LIMITER admits 1 request per period
+    Then 1 Pearl Abyss request was sent and only one of the market items carries its Pearl Abyss summary
+
   @scenario:worker-entrypoints-gateway-plugins @provenance:spec @i1
   Scenario: An Envelop plugin on the gateway's extension point sees each executed operation
     When the real Agris Proxy executes a market item query with a plugin that records each operation

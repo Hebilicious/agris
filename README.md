@@ -206,7 +206,7 @@ A misspelt setting or a value Agris cannot use stops the deploy before anything 
 | `GLOBAL_RATE_LIMIT_PERIOD_SECONDS` | `60`    | `60`    |          |
 | `GLOBAL_RATE_LIMIT_NAMESPACE_ID`   | `42011` | `42022` |          |
 
-**Upstream (Pearl Abyss).** One coordinator per Pearl Abyss host, placed next to it, sends each distinct call once.
+**Upstream (Pearl Abyss).** One coordinator per Pearl Abyss host, placed next to it, sends each distinct call once. `PA_MAX_CONCURRENT_REQUESTS` applies to each host; the `PA_RATE_LIMIT_*` rate is one allowance for the whole deployment, shared by every host.
 
 | Variable                       | Default | Demo    | Turn off |
 | ------------------------------ | ------- | ------- | -------- |

@@ -82,7 +82,7 @@ const steps: readonly StepDefinition<DeploySettingsWorld>[] = [
     },
   ),
   step(
-    "its market Worker binds a Pearl Abyss rate limit of 100 per 10 seconds and a concurrency of 6",
+    "its market Worker binds a Pearl Abyss rate limit of 100 per 10 seconds for the whole deployment and a concurrency of 6 per host",
     noStepArguments,
     (world) => {
       assert.deepEqual(boundRate(market(world).env, "PA_RATE_LIMITER"), { limit: 100, period: 10 });
@@ -170,7 +170,7 @@ const steps: readonly StepDefinition<DeploySettingsWorld>[] = [
     },
   ),
   step(
-    "its market Worker binds a Pearl Abyss rate limit of 20 a minute and a concurrency of 2",
+    "its market Worker binds a Pearl Abyss rate limit of 20 a minute for the whole deployment and a concurrency of 2 per host",
     noStepArguments,
     (world) => {
       assert.deepEqual(boundRate(market(world).env, "PA_RATE_LIMITER"), { limit: 20, period: 60 });

@@ -156,6 +156,7 @@ export default defineConfig({
               );
               if (itemId === undefined)
                 return Response.json({ message: "Unexpected Pearl Abyss request" }, { status: 502 });
+              observedPearlAbyssSummaryKeys.push(`${new URL(request.url).hostname}:${itemId}`);
               return Response.json({ resultCode: 0, resultMsg: `${itemId}-0-377000-114184` });
             },
           },

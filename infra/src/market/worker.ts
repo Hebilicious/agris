@@ -2,8 +2,9 @@ import type { InvocationBudgetReservation, MarketSummaryReservation } from "@agr
 import {
   executeMarketSubgraph,
   maximumConcurrentRequestsFromBinding,
-  PearlAbyssCoordination,
+  PEARL_ABYSS_ALLOWANCE_ADDRESS,
   pearlAbyssCoordinatorAddress,
+  PearlAbyssCoordinatorObject,
   readinessResponse,
   standaloneBudget,
   type PearlAbyssCoordinatorPort,
@@ -35,7 +36,8 @@ const PEARL_ABYSS_COORDINATOR = "PearlAbyssCoordinator";
  * or its upstream call is cancelled, once every caller sharing it has given up. Whether or not anyone is still
  * waiting, each distinct request has `PEARL_ABYSS_REQUEST_TIMEOUT_MS` from its arrival before the coordinator drops it,
  * and each permit `PEARL_ABYSS_PERMIT_TIMEOUT_MS` before it counts as refused. It reads `PA_MAX_CONCURRENT_REQUESTS`
- * and, when bound, `PA_RATE_LIMITER` from the market Worker's environment, which `props.ts` declares.
+ * and, when bound, `PA_RATE_LIMITER` from the market Worker's environment, which `props.ts` declares; only the object at
+ * `PEARL_ABYSS_ALLOWANCE_ADDRESS` consults the limiter, for every host.
  */
 export class PearlAbyssCoordinator extends Cloudflare.DurableObject<PearlAbyssCoordinator>()(
   PEARL_ABYSS_COORDINATOR,
@@ -44,14 +46,18 @@ export class PearlAbyssCoordinator extends Cloudflare.DurableObject<PearlAbyssCo
     const env: Record<string, unknown> | undefined = yield* Cloudflare.Workers.WorkerEnvironment;
     return Effect.sync(() => {
       if (env === undefined) throw new TypeError("The coordinator ran without the market Worker's environment.");
-      const coordination = new PearlAbyssCoordination({
+      const coordinator = new PearlAbyssCoordinatorObject({
         maximumConcurrentRequests: maximumConcurrentRequestsFromBinding(env.PA_MAX_CONCURRENT_REQUESTS),
         limiter: rateLimiterOf(env.PA_RATE_LIMITER),
+        allowance: () => {
+          const { name, locationHint } = PEARL_ABYSS_ALLOWANCE_ADDRESS;
+          return coordinatorPort(coordinatorNamespace(env).getByName(name, { locationHint }));
+        },
       });
       return {
         fetch: Effect.gen(function* () {
           const request = nativeRequest(yield* HttpServerRequest);
-          return HttpServerResponse.fromWeb(yield* Effect.promise(() => coordination.execute(request)));
+          return HttpServerResponse.fromWeb(yield* Effect.promise(() => coordinator.execute(request)));
         }),
       };
     });
@@ -76,8 +82,7 @@ export default AgrisMarket.make(
       const coordinators = coordinatorNamespace(Option.getOrThrow(environment));
       const coordinatorFor = (hostname: string): PearlAbyssCoordinatorPort => {
         const { name, locationHint } = pearlAbyssCoordinatorAddress(hostname);
-        const coordinator = coordinators.getByName(name, { locationHint });
-        return { execute: (upstream) => coordinator.fetch(upstream) };
+        return coordinatorPort(coordinators.getByName(name, { locationHint }));
       };
       return yield* Effect.promise(() =>
         executeMarketSubgraph(request, coordinatorFor, reserveBudget, reserveMarketSummary),
@@ -123,6 +128,10 @@ function rateLimiterOf(binding: unknown): PearlAbyssRateLimiter | undefined {
       return { success: Predicate.hasProperty(outcome, "success") && outcome.success === true };
     },
   };
+}
+
+function coordinatorPort(coordinator: { fetch(request: Request): Promise<Response> }): PearlAbyssCoordinatorPort {
+  return { execute: (request) => coordinator.fetch(request) };
 }
 
 interface CoordinatorNamespace {

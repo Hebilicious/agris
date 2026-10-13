@@ -57,7 +57,10 @@ export interface DeploymentSettings {
   readonly clientRateLimit: RateLimitSetting | null;
   /** `GLOBAL_RATE_LIMITER` on the gateway, for the whole deployment; `null` binds none. */
   readonly globalRateLimit: RateLimitSetting | null;
-  /** `PA_RATE_LIMITER` on the market Worker, the burst backstop on Pearl Abyss calls; `null` binds none. */
+  /**
+   * `PA_RATE_LIMITER` on the market Worker, the burst backstop on Pearl Abyss calls for the whole deployment: one
+   * coordinator consults it for every host, from one location. `null` binds none.
+   */
   readonly pearlAbyssRateLimit: RateLimitSetting | null;
   /** `PA_MAX_CONCURRENT_REQUESTS`: distinct Pearl Abyss requests at once, per host; `0` sets no limit of its own. */
   readonly pearlAbyssConcurrency: number;
@@ -104,7 +107,7 @@ const DEMO_CACHE_OVERRIDE: CacheFreshnessOverride = { minimumSeconds: 600 };
 
 /**
  * The shared demo protects Pearl Abyss first: ten requests a minute per visitor, 120 for everyone, two Pearl Abyss calls
- * at a time and twenty a minute, a ten-minute cache floor, and sparse telemetry.
+ * at a time per host and twenty a minute in all, a ten-minute cache floor, and sparse telemetry.
  */
 export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSettings>({
   names: workerNames(DEMO_STAGE),
@@ -128,9 +131,9 @@ export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSetting
 
 /**
  * A self-hosted deployment with nothing set has no limit on clients, whether one at a time or all together, six Pearl
- * Abyss calls at a time per host with a burst backstop of a hundred per ten seconds, fifty subrequests per invocation,
- * and the default cache. The Pearl Abyss limits protect the upstream whoever is asking, so a client limit is the
- * deployer's choice: set `CLIENT_RATE_LIMIT_REQUESTS` to turn one on.
+ * Abyss calls at a time per host with a burst backstop of a hundred per ten seconds in all, fifty subrequests per
+ * invocation, and the default cache. The Pearl Abyss limits protect the upstream whoever is asking, so a client limit
+ * is the deployer's choice: set `CLIENT_RATE_LIMIT_REQUESTS` to turn one on.
  */
 export const SELF_HOSTED_DEFAULTS = Object.freeze({
   clientRateLimit: { limit: 0, period: 60, namespaceId: "42010" },

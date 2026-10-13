@@ -13,7 +13,10 @@ export interface MarketEnv {
   readonly PA_MAX_CONCURRENT_REQUESTS?: number | string;
   /** This Worker's own `PearlAbyssCoordinator` Durable Object class. */
   readonly PA_COORDINATOR: DurableObjectNamespace<PearlAbyssCoordinator>;
-  /** Burst backstop for Pearl Abyss calls; absent sets no rate limit. */
+  /**
+   * Burst backstop for Pearl Abyss calls to every host together, which one coordinator consults; absent sets no rate
+   * limit.
+   */
   readonly PA_RATE_LIMITER?: RateLimit;
   /**
    * The Worker's `limits.subrequests`, which a request that arrives without the gateway's budget may spend; absent is

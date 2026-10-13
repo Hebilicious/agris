@@ -12,7 +12,13 @@ import {
   type AgrisProxyRuntimeEnv,
 } from "../../apps/gateway/src/index.ts";
 
-import { noStepArguments, step, type ExecutableFeatureManifest, type StepDefinition } from "../support/manifest.ts";
+import {
+  integerStepArgument,
+  noStepArguments,
+  step,
+  type ExecutableFeatureManifest,
+  type StepDefinition,
+} from "../support/manifest.ts";
 import { openStruct, STRICT } from "../support/schema.ts";
 
 const GRAPHQL_URL = "https://agris-proxy.internal/graphql";
@@ -237,6 +243,40 @@ const steps: readonly StepDefinition<WorkerEntrypointsWorld>[] = [
     assert.deepEqual(basePrices, [377_000, 377_000]);
   }),
   step(
+    "the real Agris Proxy queries an EU and an NA market item through a market Worker whose PA_RATE_LIMITER admits {int} request per period",
+    integerStepArgument,
+    async (world, _limit) => {
+      await resetPearlAbyssObservation();
+      const gatewayEnv: AgrisProxyRuntimeEnv = {
+        MARKET: serviceBindingPort(rateLimitedMarket()),
+        CATALOG: serviceBindingPort(env.CATALOG),
+      };
+      const cachedAgrisProxy = createCachedAgrisProxyExport(new Map(), gatewayEnv);
+      const responses = await Promise.all([
+        executeAgrisProxyEntrypoint(gatewayEnv, cachedAgrisProxy, gatewayRequest("10006", "EU")),
+        executeAgrisProxyEntrypoint(gatewayEnv, cachedAgrisProxy, gatewayRequest("10009", "NA")),
+      ]);
+      world.gatewayResponses = responses;
+      world.gatewayBodies = await Promise.all(responses.map((response) => response.clone().json()));
+    },
+  ),
+  step(
+    "{int} Pearl Abyss request was sent and only one of the market items carries its Pearl Abyss summary",
+    integerStepArgument,
+    async (world, sent) => {
+      assert.equal((await readPearlAbyssObservation()).total, sent);
+      const summarized = (world.gatewayBodies ?? []).filter((body) => {
+        const data = requiredRecord(body).data;
+        if (data === null || data === undefined) return false;
+        const market = requiredRecord(data).market;
+        if (market === null || market === undefined) return false;
+        const items = requiredRecord(market).items;
+        return Array.isArray(items) && items.some((item) => requiredRecord(item).basePrice === 377_000);
+      });
+      assert.equal(summarized.length, 1, JSON.stringify(world.gatewayBodies));
+    },
+  ),
+  step(
     "the real Agris Proxy executes a market item query with a plugin that records each operation",
     noStepArguments,
     async (world) => {
@@ -395,13 +435,13 @@ function withCacheStatus(response: Response, cacheStatus: "HIT" | "MISS"): Respo
   return new Response(response.body, { status: response.status, headers });
 }
 
-function gatewayRequest(itemId = "10006"): Request {
+function gatewayRequest(itemId = "10006", region = "NA"): Request {
   return new Request(GRAPHQL_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       query: MARKET_ITEM_QUERY,
-      variables: { region: "NA", ids: [itemId], locale: "EN" },
+      variables: { region, ids: [itemId], locale: "EN" },
     }),
   });
 }
@@ -485,6 +525,11 @@ async function readPearlAbyssObservation(): Promise<{ readonly distinct: number;
 
 interface TestBinding {
   fetch(input: string, init?: RequestInit): Promise<Response>;
+}
+
+function rateLimitedMarket(): unknown {
+  // SAFETY: The Vitest Miniflare configuration owns and installs the MARKET_RATE_LIMITED service binding for this runtime.
+  return (env as Cloudflare.Env & { readonly MARKET_RATE_LIMITED: unknown }).MARKET_RATE_LIMITED;
 }
 
 function unlimitedMarket(): unknown {
