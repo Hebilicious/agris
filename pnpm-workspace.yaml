@@ -1,0 +1,102 @@
+packages:
+  # The libraries and the three Worker packages: the only directories a host that mounts Agris installs.
+  - "packages/*"
+  - "apps/*"
+  # Everything else stays outside them, so no host installs Astro, Alchemy or the repository tools.
+  - "website"
+  - "infra"
+  - "tools/*"
+  - "tests"
+
+allowBuilds:
+  "@apollo/protobufjs@1.2.8": true
+  esbuild@0.28.1: true
+  sharp@0.35.5: true
+  workerd@1.20260815.1: true
+  workerd@1.20260820.1: true
+  workerd@1.20260918.1: true
+  workerd@1.20260926.1: true
+  workerd@1.20261002.1: true
+
+overrides:
+  # The Workers test pool runs against the same Miniflare release the rest of the toolchain uses.
+  "@cloudflare/vitest-pool-workers>miniflare": 5.20260820.0-alpha
+  # 0.35.5 carries the fix for GHSA-wq5f-xc86-pv6w, which arrives through wrangler and miniflare.
+  sharp: 0.35.5
+  # 7.29.1 carries the fix for GHSA-3wwx-pv8p-q78v; miniflare pins the vulnerable 7.29.0 exactly.
+  "miniflare>undici": 7.29.1
+  # 2.1.7 and 5.0.12 carry the fixes for GHSA-6j4f-fj2g-mc7p and GHSA-q2hr-2g5m-vwhr.
+  "brace-expansion@2": 2.1.7
+  "brace-expansion@5": 5.0.12
+  # 2.1.2 carries the fixes for GHSA-5gmw-xhrv-c9v3 and GHSA-85c8-ppgw-ccpr; oxfmt pins 2.1.0 exactly.
+  "oxfmt>tinypool": 2.1.2
+  # 12.0.1 is the first release with the fix for GHSA-7mx3-vvmw-hjmv; the gateway runtime's other
+  # dependencies still ask for ^10 or ^11, and 12.0.3 exports everything they use.
+  "@graphql-tools/utils@<12.0.1": 12.0.3
+
+minimumReleaseAgeExclude:
+  - "@cloudflare/workers-types@5.20260828.1"
+  - "@cloudflare/workerd-darwin-64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-darwin-arm64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-linux-64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-linux-arm64@1.20260824.1 || 1.20260828.1"
+  - "@cloudflare/workerd-windows-64@1.20260824.1 || 1.20260828.1"
+  - workerd@1.20260824.1 || 1.20260828.1
+  - xstate@6.0.0-alpha.61
+  - "@alchemy.run/cloudflare-runtime@2.0.0-beta.83"
+  - "@alchemy.run/floci@2.0.0-beta.83"
+  - "@alchemy.run/node-utils@2.0.0-beta.83"
+  - "@distilled.cloud/acme@1.0.0-rc.15"
+  - "@distilled.cloud/aws@1.0.0-rc.15"
+  - "@distilled.cloud/axiom@1.0.0-rc.15"
+  - "@distilled.cloud/cloudflare@1.0.0-rc.15"
+  - "@distilled.cloud/core@1.0.0-rc.15"
+  - "@distilled.cloud/doppler@1.0.0-rc.15"
+  - "@distilled.cloud/fly-io@1.0.0-rc.15"
+  - "@distilled.cloud/gcp@1.0.0-rc.15"
+  - "@distilled.cloud/hetzner@1.0.0-rc.15"
+  - "@distilled.cloud/iceberg@1.0.0-rc.15"
+  - "@distilled.cloud/infisical@1.0.0-rc.15"
+  - "@distilled.cloud/neon@1.0.0-rc.15"
+  - "@distilled.cloud/planetscale@1.0.0-rc.15"
+  - "@distilled.cloud/prisma@1.0.0-rc.15"
+  - "@distilled.cloud/railway@1.0.0-rc.15"
+  - "@distilled.cloud/stripe@1.0.0-rc.15"
+  - "@distilled.cloud/turso@1.0.0-rc.15"
+  - "@distilled.cloud/zerossl@1.0.0-rc.15"
+  - alchemy@2.0.0-beta.83
+
+# The one version of every external package. Each package.json names it with `catalog:`.
+catalogMode: strict
+catalog:
+  "@apollo/subgraph": "2.14.4"
+  "@cloudflare/vitest-pool-workers": "0.22.0"
+  "@cloudflare/workers-types": "5.20260828.1"
+  "@cucumber/cucumber-expressions": "^20.1.0"
+  "@cucumber/gherkin": "^42.0.1"
+  "@cucumber/messages": "^34.2.1"
+  "@cucumber/tag-expressions": "^11.0.1"
+  "@effect/platform-node": "4.0.0"
+  "@graphql-hive/gateway-runtime": "2.12.1"
+  "@graphql-mesh/compose-cli": "1.8.1"
+  "@graphql-mesh/transport-http": "1.2.1"
+  "@pothos/core": "4.13.1"
+  "@pothos/plugin-dataloader": "4.4.5"
+  "@pothos/plugin-directives": "4.3.1"
+  "@pothos/plugin-federation": "4.5.3"
+  "@types/node": "^24.0.0"
+  "@types/ws": "8.18.1"
+  alchemy: "2.0.0-beta.83"
+  astro: "7.3.8"
+  effect: "4.0.0"
+  fast-check: "^4.9.0"
+  graphql: "16.14.2"
+  graphql-yoga: "5.22.0"
+  miniflare: "5.20260820.0-alpha"
+  oxfmt: "0.62.0"
+  oxlint: "1.80.0"
+  playwright-core: "1.63.0"
+  typescript: "7.0.2"
+  vitest: "^4.1.10"
+  ws: "8.21.0"
+  xstate: "6.0.0-alpha.61"

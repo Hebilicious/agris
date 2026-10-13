@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 120,
+  "ignorePatterns": [
+    "**/moon.yml",
+    ".moon/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.artifacts/**",
+    "**/.cloudflare/**",
+    "**/.wrangler/**",
+    "**/.alchemy/**",
+    "**/.astro/**",
+    "pnpm-lock.yaml",
+    "packages/catalog-subgraph/src/generated-catalog-search-artifact.ts",
+    "tools/schema/artifacts/**",
+    "website/vendor/**"
+  ]
+}

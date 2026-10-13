@@ -1,0 +1,38 @@
+language: "typescript"
+layer: "tool"
+stack: "backend"
+
+project:
+  title: "Agris Smoke"
+  description: "Proves the deployed gateway's Workers Cache through the Alchemy `smoke` stage's caller and its Service Binding."
+
+toolchains:
+  default: ["javascript", "node", "pnpm"]
+
+tasks:
+  typecheck:
+    description: "Type-check the smoke caller."
+    command: "tsc"
+    args: ["-p", "tsconfig.json", "--noEmit"]
+    inputs: ["caller/src/**/*.ts", "worker-env.d.ts", "tsconfig.json", "package.json", "@group(agris-sources)"]
+
+  smoke:
+    description: "Deploy the `smoke` stage, then prove its MISS, HIT and stale-on-503 behaviour through the caller's Service Binding; `moon run infra:smoke-destroy` deletes it."
+    tags: ["external-mutation"]
+    command: "vitest"
+    args: ["run", "--root", "../../tests", "--config", "../../tests/vitest.publication.config.ts"]
+    deps: ["typecheck", "infra:smoke-deploy"]
+    options:
+      cache: false
+      runInCI: "skip"
+      runDepsInParallel: false
+
+  verify-deployed:
+    description: "Verify the already-deployed `smoke` stage without changing Cloudflare state."
+    tags: ["external-state"]
+    command: "vitest"
+    args: ["run", "--root", "../../tests", "--config", "../../tests/vitest.publication.config.ts"]
+    deps: ["typecheck"]
+    options:
+      cache: false
+      runInCI: "skip"

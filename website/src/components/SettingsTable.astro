@@ -1,0 +1,100 @@
+---
+// A table of deployment settings: what each one sets and its variable, a self-hosted gateway's default, the shared
+// demo's value, and the value that turns it off. The page passes the rows in; every number in them comes from the
+// deployment's settings, never typed here.
+import { durationOf } from "../figure/model.ts";
+import SettingVariable from "./SettingVariable.astro";
+
+/**
+ * How a setting's value reads: `seconds` as a duration, `switch` as on or off, anything else as a count of that unit,
+ * named in the plural (`requests`, `fields`).
+ */
+export type SettingUnit = string;
+
+/** A setting's value; `null` when it is off. */
+export type SettingValue = number | boolean | null;
+
+export interface SettingRow {
+  /** The environment variable that sets it, such as `CLIENT_RATE_LIMIT_REQUESTS`. */
+  readonly variable: string;
+  /** What it sets, in plain words. */
+  readonly label: string;
+  /** What a self-hosted gateway runs with when the variable is unset. */
+  readonly selfHosted: SettingValue;
+  /** What the shared demo runs with. */
+  readonly demo: SettingValue;
+  readonly unit: SettingUnit;
+  /** The value that turns it off, or `null` when it has no off. */
+  readonly disable: string | null;
+}
+
+interface Props {
+  rows: readonly SettingRow[];
+  /** The accessible name of the table. */
+  label: string;
+}
+
+const { rows, label } = Astro.props;
+
+/** The singular of each counted unit; a unit not listed reads the same for one. */
+const SINGULAR: Readonly<Record<string, string>> = {
+  requests: "request",
+  calls: "call",
+  subrequests: "subrequest",
+  fields: "field",
+  aliases: "alias",
+  listings: "listing",
+};
+
+/** `Off`, `On`, `10 min` or `60 requests`. A value equal to the setting's off value reads as off. */
+function valueOf(row: SettingRow, value: SettingValue): string {
+  if (value === null || value === false || (row.disable !== null && String(value) === row.disable)) return "Off";
+  if (value === true) return "On";
+  if (row.unit === "seconds") return durationOf(value);
+  if (row.unit === "switch") return value === 0 ? "Off" : "On";
+  const unit = value === 1 ? (SINGULAR[row.unit] ?? row.unit) : row.unit;
+  return `${value.toLocaleString("en")} ${unit}`;
+}
+
+const cells = rows.map((row) => {
+  const own = valueOf(row, row.selfHosted);
+  return { ...row, own, ownOff: own === "Off", demoText: valueOf(row, row.demo) };
+});
+---
+
+<div class="table-scroll">
+  <table class="settings" aria-label={label}>
+    <thead>
+      <tr>
+        <th scope="col">Setting</th>
+        <th scope="col">Default</th>
+        <th scope="col">Shared demo</th>
+        <th scope="col">To turn it off</th>
+      </tr>
+    </thead>
+    <tbody>
+      {
+        cells.map((row) => (
+          <tr>
+            <th scope="row">
+              <span class="setting-label">{row.label}</span>
+              <SettingVariable name={row.variable} />
+            </th>
+            <td class:list={["own", { off: row.ownOff }]}>{row.own}</td>
+            <td class:list={{ off: row.demoText === "Off" }}>{row.demoText}</td>
+            <td>
+              {row.disable === null ? (
+                <span class="setting-none">
+                  <span aria-hidden="true">—</span>
+                  <span class="visually-hidden">It has no off value</span>
+                </span>
+              ) : (
+                <code>{row.disable}</code>
+              )}
+            </td>
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

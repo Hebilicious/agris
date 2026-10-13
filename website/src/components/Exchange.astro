@@ -1,0 +1,194 @@
+---
+// Fig 1, "The Agris exchange": the request path drawn as a counting-house machine. The art is built here, at build
+// time, from `src/figure/art.ts`; the script below moves it in the browser. Every number it shows comes from
+// `src/facts.ts` or from the cache policy the gateway chose for each query (`src/queries/examples-policy.ts`), and
+// reaches the browser in the data block below.
+import { figureSvg } from "../../vendor/anatomy/iso-kit.ts";
+import { DEMO, MAXIMUM_GATEWAY_REQUEST_BYTES, PUBLIC_DOCUMENT_LIMITS, rateOf, SELF_HOSTED } from "../facts.ts";
+import { figureBody } from "../figure/art.ts";
+import { hotspots, type HotspotId } from "../figure/hotspots.ts";
+import { HEIGHT, WIDTH } from "../figure/layout.ts";
+import { durationOf, LOCALES, type MachineFacts } from "../figure/model.ts";
+import { IDLE_VIEW, STEPS } from "../figure/steps.ts";
+import { FIGURE_QUERIES } from "../queries/examples-policy.ts";
+import Icon from "./Icon.astro";
+
+const { maxDepth, maxFields, maxAliases } = PUBLIC_DOCUMENT_LIMITS;
+// A self-hosted gateway limits no visitor by default, so the turnstile turns at the shared demo's limit.
+const machine: MachineFacts = { rate: DEMO.clientRateLimit, carriages: SELF_HOSTED.pearlAbyssConcurrency };
+const { rate, carriages } = machine;
+const staleIfError = durationOf(SELF_HOSTED.cacheFreshness.staleIfErrorSeconds);
+
+/** What each part is, in the words its label shows on hover, focus or tap. */
+const PARTS: Record<HotspotId, { name: string; text: string }> = {
+  tray: { name: "Client's tray", text: "Where your query starts, as a punched card, and where its answer comes back." },
+  file: {
+    name: "Master cards",
+    text: "Persisted queries: a client can name a stored query by its hash instead of sending the whole text.",
+  },
+  turnstile: {
+    name: "Turnstile: the rate limit",
+    text: `One tooth per request. The shared demo admits ${rateOf(rate)} per visitor; one more and the pawl holds the wheel, which is a 429. A self-hosted gateway has no turnstile until you set one.`,
+  },
+  punch: {
+    name: "Punch: the cache key",
+    text: "Prints the query and its variables in one canonical form and hashes them, so the same question always gets the same holes.",
+  },
+  gauge: {
+    name: "Gauge: the query limits",
+    text: `Queries only, nested at most ${maxDepth} deep, ${maxFields} fields, ${maxAliases} aliases and ${MAXIMUM_GATEWAY_REQUEST_BYTES / 1_024} KiB.`,
+  },
+  rack: {
+    name: "Pigeonhole rack: the edge cache",
+    text: `One pigeonhole per answer. Its hourglass runs the fresh window (top) and then the serve-while-refreshing window (bottom). Any answer can also stand in for ${staleIfError} if refreshes fail.`,
+  },
+  stamp: {
+    name: "Stamp: Cache-Control",
+    text: "Marks every answer with how long it may be kept. An answer with errors is stamped never to be stored.",
+  },
+  splitter: {
+    name: "Splitter: federation",
+    text: "Hive Gateway plans the query across both subgraphs. Its two rods are Service Bindings, which have no public URL.",
+  },
+  cabinet: {
+    name: "Card cabinet: the catalog subgraph",
+    text: `Item names in ${LOCALES.length} languages, one drawer each, answered from memory. It never calls Pearl Abyss.`,
+  },
+  carousel: {
+    name: "Carousel: the market subgraph",
+    text: `A Durable Object per Pearl Abyss server. It runs ${carriages} calls at once, and identical calls in flight share one cradle.`,
+  },
+  line: {
+    name: "The line to Pearl Abyss",
+    text: "The only line that leaves the bench. Every call out to the official market servers runs along it and back.",
+  },
+};
+
+const hotLayer = `<g class="fx-hots">${hotspots()
+  .map(
+    ({ id, path }) =>
+      `<path class="fx-hot" d="${path}" data-hot="${id}" tabindex="0" role="button" aria-label="${PARTS[id].name}. ${PARTS[id].text}"/>`,
+  )
+  .join("")}</g>`;
+
+const label = `A counting-house machine on a bench that stands for the Agris gateway. A query card leaves the client's tray, passes a turnstile whose ${rate.limit}-tooth ratchet wheel is the rate limit, is punched with its canonical cache key, and passes a gauge with three fences for the query limits. A rack of six pigeonholes, each with a lock and an hourglass, is the edge cache: a card whose key matches a stored answer gets it back at once. On a miss the card goes on to a splitter whose two rods are the private Service Bindings: one to a twelve-drawer card cabinet, the catalog, and one to a carousel with ${carriages} cradles, the Pearl Abyss coordinator, whose line is the only one that leaves the bench. The answer is stamped with its Cache-Control, filed in its pigeonhole if it may be stored, and returned to the tray.`;
+
+// A group rather than an image: the parts' hotspots inside it are buttons a keyboard or screen reader can reach.
+const svg = figureSvg({ width: WIDTH, height: HEIGHT, label, body: figureBody() + hotLayer }).replace(
+  'role="img"',
+  'role="group"',
+);
+const data = JSON.stringify({ machine, queries: FIGURE_QUERIES });
+const picks = FIGURE_QUERIES.map((query) => ({
+  kind: query.kind,
+  label: query.label,
+  window: query.policy.mode === "no-store" ? "never stored" : `fresh ${durationOf(query.policy.maxAge)}`,
+}));
+const first = FIGURE_QUERIES[0];
+/** What Skip ahead skips for a query: its fresh window, or the rate window when it is never stored. */
+const skipLabelOf = (query: (typeof FIGURE_QUERIES)[number] | undefined) =>
+  query === undefined || query.policy.mode === "no-store" ? durationOf(rate.period) : durationOf(query.policy.maxAge);
+const firstSkip = skipLabelOf(first);
+// The skip label changes with the chosen query; reserving the widest one keeps the button from resizing.
+const skipWidth = Math.max(firstSkip.length, ...FIGURE_QUERIES.map((query) => skipLabelOf(query).length));
+const skipStyle = `--fx-skip-width: ${skipWidth}ch`;
+const tips = Object.fromEntries(Object.entries(PARTS).map(([id, part]) => [id, part]));
+---
+
+<figure class="iso-figure fx" data-exchange data-status="idle" aria-labelledby="fx-caption">
+  <div class="fx-console">
+    <div class="fx-primary">
+      <!-- The chosen query is named for screen readers only: a visible name would resize the button on every pick. -->
+      <button type="button" class="fx-send" data-send-selected data-suggest>
+        <Icon name="play" size={18} class="icon-fill" />
+        <span class="fx-send-verb">Send</span>
+        <span class="visually-hidden" data-send-name>{first?.label ?? "a query"}</span>
+      </button>
+      <div class="fx-picker" role="radiogroup" aria-label="Query to send">
+        {
+          picks.map((pick, index) => (
+            <button type="button" role="radio" class="fx-pick" data-pick={pick.kind} aria-checked={index === 0 ? "true" : "false"}>
+              <span class="fx-pick-name">{pick.label}</span>
+              <span class="fx-pick-term">{pick.window}</span>
+            </button>
+          ))
+        }
+      </div>
+    </div>
+    <div class="fx-secondary" role="group" aria-label="Try a scenario">
+      <button type="button" class="fx-trick" data-skip>
+        <Icon name="forward" size={16} />
+        <span>Skip ahead <span class="fx-trick-term fx-skip-term" data-skip-by style={skipStyle}>{firstSkip}</span></span>
+      </button>
+      <button type="button" class="fx-trick fx-flood" data-send="flood">
+        <Icon name="waves" size={16} />
+        <span>Flood it <span class="fx-trick-term">{rate.limit + 1} at once</span></span>
+      </button>
+      <button type="button" class="fx-trick fx-reset" data-reset>
+        <Icon name="reset" size={16} />
+        <span>Reset</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="iso-plate">
+    <div class="iso-plate-corners" aria-hidden="true">
+      <span class="iso-plate-corner" data-corner="fig">Fig 1</span>
+      <span class="iso-plate-corner" data-corner="title">The Agris exchange</span>
+      <span class="iso-plate-corner" data-corner="hint" data-hint>Point at any part to name it</span>
+      <span class="iso-plate-corner" data-corner="readout">
+        <span class="fx-badge" data-badge>Ready</span>
+        <span data-readout>{rateOf(rate)} per visitor</span>
+      </span>
+    </div>
+    <ol class="fx-steps" aria-label="Where the card is">
+      {
+        STEPS.map((step, index) => (
+          <li class="fx-step" data-step={step.id} data-part={step.part} data-state="waiting">
+            <span class="fx-step-dot" aria-hidden="true">{index + 1}</span>
+            <span class="fx-step-label">{step.label}</span>
+            <span class="fx-step-tag" data-step-tag />
+          </li>
+        ))
+      }
+    </ol>
+    <div
+      class="iso-stage fx-stage"
+      data-stage
+      tabindex="0"
+      role="group"
+      aria-label="The Agris exchange. Enter sends the chosen query, keys 1 to 5 send one of the five queries, S skips ahead, F floods the turnstile, R resets."
+    >
+      <Fragment set:html={svg} />
+      <div class="fx-tip" data-tip role="tooltip" hidden>
+        <strong data-tip-name></strong>
+        <span data-tip-text></span>
+      </div>
+    </div>
+    <p class="fx-scroll-hint" aria-hidden="true">Drag the bench sideways · it follows the card</p>
+    <p class="fx-narration" data-narration>{IDLE_VIEW.narration}</p>
+    <p class="fx-announce" data-announce aria-live="polite"></p>
+    <script type="application/json" data-fx set:html={data} />
+    <script type="application/json" data-tips set:html={JSON.stringify(tips)} />
+  </div>
+  <figcaption class="iso-legend" id="fx-caption">
+    <span class="iso-keys">
+      <span class="iso-key"><span class="fx-swatch" data-swatch="hit"></span>HIT: answered from the cache</span>
+      <span class="iso-key"><span class="fx-swatch" data-swatch="miss"></span>MISS: fetched, then filed</span>
+      <span class="iso-key"><span class="fx-swatch" data-swatch="stale"></span>STALE: served old while refreshing</span>
+      <span class="iso-key"><span class="fx-swatch" data-swatch="rejected"></span>429: rate limited</span>
+    </span>
+    <span class="iso-caption">
+      Left to right: the tray, the turnstile (the rate limit), the punch (the cache key), the gauge (the query limits),
+      the pigeonhole rack (the edge cache), the stamp, and the splitter that sends a miss down two Service Bindings: to
+      the catalog's drawers, which answer from memory, and to the market's carousel, whose line is the only one that
+      leaves the bench, for Pearl Abyss. Windows are a self-hosted gateway's defaults; time is simulated.
+    </span>
+  </figcaption>
+</figure>
+
+<script>
+  import { mountExchange } from "../figure/live";
+
+  for (const root of document.querySelectorAll<HTMLElement>("[data-exchange]")) mountExchange(root);
+</script>

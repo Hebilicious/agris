@@ -1,0 +1,2118 @@
+/*
+ * The Agris identity: a merchant's counting house at night. Parchment and violet ink by day, a violet night sky after
+ * dark, brass gold for what you can act on, and four status colours for the cache (HIT teal, MISS violet, STALE amber,
+ * 429 crimson). The hero is always night. Cinzel, an open-licence Roman capital, sets the display type.
+ */
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/fonts/cinzel-latin-wght.woff2") format("woff2-variations");
+}
+
+:root {
+  color-scheme: light dark;
+  --display: "Cinzel", "Trajan Pro", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --measure: 66ch;
+  --radius: 14px;
+  /* The sticky header's row; the header adds a 1px rule under it. */
+  --header-height: 3.75rem;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --bg: #f6efe0;
+  --bg-raised: #fffaf0;
+  --bg-sunk: #efe4cc;
+  --line: #e2d4b6;
+  --line-strong: #cbb68c;
+  --ink: #1f1633;
+  --text: #3d3350;
+  --muted: #65597a;
+  --brand: #5a2fa0;
+  --brand-soft: #ebe1fa;
+  --gold: #d9a43a;
+  --gold-strong: #8a5a00;
+  --gold-soft: #f6e5bd;
+  --on-gold: #241606;
+  --hit: #0b7563;
+  --miss: #5b3fc4;
+  --stale: #a24c06;
+  --deny: #b3202c;
+  --bypass: #57607a;
+  --shadow: 0 1px 0 #ffffffa0 inset, 0 1px 2px #3a2a1012, 0 8px 24px -12px #3a2a1030;
+
+  --night-1: #160c2a;
+  --night-2: #2a1650;
+  --night-glow: #7b47d6;
+  --night-ink: #f7eedb;
+  --night-text: #d9cfe8;
+  --night-muted: #b4a7cb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #120c1d;
+    --bg-raised: #1b1329;
+    --bg-sunk: #170f25;
+    --line: #2f2443;
+    --line-strong: #4b3c66;
+    --ink: #f7eedb;
+    --text: #d7cde4;
+    --muted: #a99bbd;
+    --brand: #c4a8ff;
+    --brand-soft: #2a1d45;
+    --gold: #e9b955;
+    --gold-strong: #f2c96a;
+    --gold-soft: #3a2a12;
+    --on-gold: #1d1204;
+    --hit: #48d2b2;
+    --miss: #b7a0ff;
+    --stale: #f6ab45;
+    --deny: #ff7b82;
+    --bypass: #a9b0c4;
+    --shadow: 0 1px 0 #ffffff0a inset, 0 0 0 1px #00000040, 0 12px 28px -14px #00000090;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 4.75rem;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.65 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--brand);
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color 160ms var(--ease);
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+h1,
+h2 {
+  font-family: var(--display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+h1 {
+  font-size: clamp(2.2rem, 1.4rem + 2.6vw, 3.45rem);
+  line-height: 1.08;
+}
+
+h2 {
+  font-size: clamp(1.7rem, 1.25rem + 1.6vw, 2.5rem);
+}
+
+h3 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+h4 {
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+p {
+  margin: 0;
+}
+
+code {
+  padding: 0.08em 0.32em;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--brand) 9%, transparent);
+  color: var(--ink);
+  font: 0.86em/1.4 var(--mono);
+}
+
+pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+strong {
+  color: var(--ink);
+}
+
+.wrap {
+  width: min(74rem, 100% - 2.5rem);
+  margin-inline: auto;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 20;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  background: var(--gold);
+  color: var(--on-gold);
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+.icon {
+  flex: none;
+}
+
+.icon-fill path {
+  fill: currentColor;
+}
+
+/* Header */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--night-1) 88%, transparent);
+  backdrop-filter: blur(12px) saturate(1.3);
+  border-bottom: 1px solid #ffffff14;
+  color: var(--night-text);
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: var(--header-height);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--night-ink);
+  font: 700 1.2rem/1 var(--display);
+  letter-spacing: 0.06em;
+  text-decoration: none;
+}
+
+.brand img {
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px #ffffff1f;
+}
+
+.nav-list {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.92rem;
+}
+
+.nav-list a {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  color: var(--night-text);
+  text-decoration: none;
+  transition:
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.nav-list a:hover {
+  background: #ffffff12;
+  color: var(--night-ink);
+}
+
+.nav-github {
+  box-shadow: 0 0 0 1px #ffffff26;
+}
+
+/* Buttons */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.6rem 1.1rem;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--shadow);
+  color: var(--ink);
+  font: 600 0.95rem/1.1 var(--sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 160ms var(--ease),
+    box-shadow 160ms var(--ease),
+    background 160ms var(--ease);
+}
+
+.button:hover {
+  box-shadow:
+    0 0 0 1px var(--gold),
+    var(--shadow);
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button.primary {
+  background: linear-gradient(180deg, #ffd889, var(--gold) 55%, #c08a23);
+  box-shadow:
+    0 0 0 1px #8a5a0080,
+    0 1px 0 #fff3d0 inset,
+    0 10px 24px -10px #d9a43a90;
+  color: var(--on-gold);
+}
+
+.button.primary:hover {
+  box-shadow:
+    0 0 0 1px #8a5a00,
+    0 1px 0 #fff3d0 inset,
+    0 14px 28px -10px #d9a43ab0;
+}
+
+.button.small {
+  min-height: 2.3rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.86rem;
+}
+
+/* Hero: always night */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 4.5rem 0 2.25rem;
+  background:
+    radial-gradient(60rem 36rem at 78% 30%, color-mix(in srgb, var(--night-glow) 45%, transparent), transparent 70%),
+    radial-gradient(40rem 30rem at 10% 110%, #b4462a33, transparent 70%),
+    linear-gradient(180deg, var(--night-1), var(--night-2) 70%, #3a1d5e);
+  color: var(--night-text);
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #e9b95580, transparent);
+}
+
+/* As tall as the artwork, less the hero's top padding, so the stack strip sits where the art has faded. */
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, var(--copy-width));
+  min-height: calc(var(--art-height) - 4.5rem);
+  align-items: center;
+  gap: 2.5rem;
+}
+
+.hero h1 {
+  color: var(--night-ink);
+  text-shadow: 0 2px 24px #00000050;
+}
+
+/* Beside the art the headline takes two lines: "Central Market Proxy", the longer, is 12.7em wide in Cinzel. */
+@media (min-width: 961px) {
+  .hero h1 {
+    font-size: min(2.9rem, calc(var(--copy-width) / 13));
+  }
+}
+
+.hero .lede {
+  max-width: 36rem;
+  margin-top: 1.25rem;
+  color: var(--night-text);
+  font-size: 1.12rem;
+}
+
+/* A soft shadow lifts the small text off the castle's fires where the art shows through behind it. */
+.hero .lede,
+.hero-note {
+  text-shadow: 0 1px 10px #0c0618;
+}
+
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1.4rem;
+  padding: 0;
+  list-style: none;
+}
+
+.badge {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: #ffffff10;
+  box-shadow: 0 0 0 1px #ffffff26 inset;
+  color: var(--night-text);
+  font: 600 0.75rem/1.2 var(--sans);
+  letter-spacing: 0.04em;
+}
+
+.badge-gold {
+  background: linear-gradient(180deg, #ffd889, #e3ad45);
+  box-shadow: none;
+  color: #241606;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 2rem;
+}
+
+.button.ghost {
+  background: #ffffff0d;
+  box-shadow: 0 0 0 1px #ffffff33 inset;
+  color: var(--night-ink);
+}
+
+.button.ghost:hover {
+  background: #ffffff1a;
+  box-shadow: 0 0 0 1px #e9b955 inset;
+}
+
+.hero-note {
+  max-width: 34rem;
+  margin-top: 1.1rem;
+  color: var(--night-muted);
+  font-size: 0.88rem;
+}
+
+/*
+ * The Agris artwork is 2048 × 768 pixels and is never drawn larger than that. On desktops it sits beside the copy and
+ * grows with the window until it reaches its natural size at about 1900px. Its place is the further left of two:
+ * where the GraphQL logo in Agris's raised hand starts just right of the copy, and where the scales in her other hand
+ * end just inside the right edge. So both hands stay in view, and the logo clears the headline. The roots and the
+ * castle left of the logo lie behind the copy, faded and darkened into the night. Below 961px it becomes a band above
+ * the copy, scaled down.
+ *
+ * `.hero` is an inline-size container, so `cqw` is a hundredth of the hero's width, which leaves out the scrollbar.
+ */
+.hero {
+  container-type: inline-size;
+  --copy-width: 38rem;
+  /* The copy column's right edge: the centred `.wrap`'s margin plus the column. */
+  --copy-right: calc((100cqw - min(74rem, 100cqw - 2.5rem)) / 2 + var(--copy-width));
+  --art-width: min(2048px, 112cqw - 80px);
+  --art-height: calc(var(--art-width) * 768 / 2048);
+  /* Two landmarks, as fractions of the artwork's width: the left edge of the logo's glow, the right edge of the scales. */
+  --logo-left: 0.293;
+  --scales-right: 0.755;
+  --art-left: min(
+    calc(var(--copy-right) + 1.5rem - var(--art-width) * var(--logo-left)),
+    calc(100cqw - 2rem - var(--art-width) * var(--scales-right))
+  );
+}
+
+.hero-backdrop {
+  position: absolute;
+  top: 0;
+  left: var(--art-left);
+  z-index: 0;
+  display: block;
+  width: var(--art-width);
+  height: var(--art-height);
+  -webkit-mask-image:
+    linear-gradient(90deg, transparent 4%, #000 25%, #000 90%, transparent),
+    linear-gradient(180deg, #000 80%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(90deg, transparent 4%, #000 25%, #000 90%, transparent),
+    linear-gradient(180deg, #000 80%, transparent);
+  mask-composite: intersect;
+}
+
+.hero-backdrop img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * A wash over the part of the art behind the copy keeps the text readable over the roots and the castle's fires. It
+ * clears at the copy's right edge, measured from the artwork's left edge.
+ */
+.hero-backdrop::after {
+  --copy-edge: calc(var(--copy-right) - var(--art-left));
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #0c0618b3 calc(var(--copy-edge) - 18rem),
+    #0c061873 calc(var(--copy-edge) - 5rem),
+    #0c061800 calc(var(--copy-edge) + 1rem)
+  );
+}
+
+.hero > .wrap {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * Narrow desktops: a narrower copy column, and art at 0.65 of its size placed by the logo alone. The whole figure no
+ * longer fits beside the copy, so the scales run off the right edge while the logo and Agris's face stay on screen.
+ */
+@media (min-width: 961px) and (max-width: 1199px) {
+  .hero {
+    --copy-width: 34rem;
+    --art-width: 1331px;
+    --art-left: calc(var(--copy-right) + 1.5rem - var(--art-width) * var(--logo-left));
+  }
+}
+
+.hero-stack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1.2rem;
+  margin: 2.5rem 0 0;
+  padding: 1.25rem 0 0;
+  list-style: none;
+  border-top: 1px solid #ffffff17;
+  color: var(--night-muted);
+  font: 600 0.78rem/1.2 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Each name after the first starts with a gold dot, centred in the gap before it. */
+.hero-stack li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hero-stack li + li::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  margin-left: -0.7rem;
+  border-radius: 50%;
+  background: #e9b955;
+}
+
+/* Sections */
+
+section {
+  padding: 5.5rem 0;
+}
+
+.section-head {
+  max-width: 48rem;
+  margin-bottom: 2.75rem;
+}
+
+/* A heading on the left and its lede on the right, where a figure below needs the height. */
+@media (min-width: 961px) {
+  .section-head-split {
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    column-gap: 3rem;
+    align-items: end;
+    max-width: none;
+    margin-bottom: 2rem;
+  }
+
+  .section-head-split .eyebrow {
+    grid-column: 1;
+  }
+
+  .section-head-split h2 {
+    grid-column: 1;
+  }
+
+  .section-head-split .section-lede {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: end;
+    margin-top: 0;
+  }
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+  color: var(--gold-strong);
+  font: 700 0.78rem/1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.eyebrow::before {
+  content: "";
+  width: 1.6rem;
+  height: 1px;
+  background: currentColor;
+}
+
+.section-lede {
+  max-width: var(--measure);
+  margin-top: 1rem;
+  font-size: 1.08rem;
+}
+
+.note {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+/* 100% FOSS band */
+
+.foss {
+  position: relative;
+  background: radial-gradient(50rem 20rem at 50% 0%, var(--gold-soft), transparent 70%), var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.foss .section-head {
+  margin-inline: auto;
+  text-align: center;
+}
+
+.foss .section-lede {
+  margin-inline: auto;
+}
+
+.freedoms {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.freedom {
+  padding: 1.4rem 1.4rem 1.5rem;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+
+.freedom-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  margin-bottom: 0.9rem;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffe2a0, var(--gold));
+  color: #3a2406;
+}
+
+.freedom p {
+  margin-top: 0.4rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.foss-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.7rem;
+  margin-top: 2.25rem;
+}
+
+/* The machine */
+
+.machine {
+  padding-top: 4rem;
+  background: var(--bg-sunk);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The stack */
+
+.flow {
+  margin-bottom: 3rem;
+  padding: 1.75rem;
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    radial-gradient(40rem 16rem at 100% 0%, color-mix(in srgb, var(--night-glow) 30%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--night-1), var(--night-2));
+  color: var(--night-text);
+  box-shadow: var(--shadow);
+}
+
+.flow h3 {
+  color: var(--night-ink);
+  font: 700 1.15rem/1.2 var(--display);
+  letter-spacing: 0.04em;
+}
+
+.flow-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: flow;
+}
+
+.flow-step {
+  position: relative;
+  padding-top: 0.25rem;
+}
+
+.flow-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 1.15rem;
+  left: 2.8rem;
+  right: -0.6rem;
+  height: 1px;
+  background: linear-gradient(90deg, #e9b95599, #e9b95520);
+}
+
+.flow-number {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.8rem;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd889, #d9a43a);
+  color: #241606;
+  font: 700 0.95rem/1 var(--display);
+}
+
+.flow-step h4 {
+  color: var(--night-ink);
+}
+
+.flow-step p {
+  margin-top: 0.35rem;
+  color: var(--night-text);
+  font-size: 0.9rem;
+}
+
+.layers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.1rem;
+}
+
+.layer {
+  --layer: var(--brand);
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+  border-top: 3px solid var(--layer);
+}
+
+.layer[data-layer="graph"] {
+  --layer: #d63d9c;
+}
+
+.layer[data-layer="edge"] {
+  --layer: #f38020;
+}
+
+.layer[data-layer="code"] {
+  --layer: #3178c6;
+}
+
+.layer[data-layer="workshop"] {
+  --layer: var(--gold);
+}
+
+.layer header {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  margin-bottom: 1.1rem;
+}
+
+.layer-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--layer) 14%, transparent);
+  color: var(--layer);
+}
+
+.layer header h3 {
+  font: 700 1.1rem/1.2 var(--display);
+  letter-spacing: 0.03em;
+}
+
+.layer header p {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.layer dl {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.layer dl div {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.layer dt {
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 0.93rem;
+}
+
+.layer dd {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+/* Extending the gateway with Envelop plugins */
+
+.extend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 2rem;
+  align-items: center;
+  margin-top: 1.1rem;
+  padding: 1.75rem;
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    radial-gradient(36rem 18rem at 0% 100%, #d63d9c33, transparent 70%),
+    radial-gradient(40rem 16rem at 100% 0%, color-mix(in srgb, var(--night-glow) 30%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--night-1), var(--night-2));
+  color: var(--night-text);
+  box-shadow: var(--shadow);
+}
+
+.extend .eyebrow {
+  color: #f2c96a;
+}
+
+.extend h3 {
+  color: var(--night-ink);
+  font: 700 1.35rem/1.2 var(--display);
+  letter-spacing: 0.03em;
+}
+
+.extend-copy p:not(.eyebrow) {
+  max-width: 34rem;
+  margin-top: 0.75rem;
+  font-size: 0.97rem;
+}
+
+.extend-copy .button {
+  margin-top: 1.4rem;
+}
+
+.extend-copy code {
+  background: #ffffff14;
+  color: var(--night-ink);
+}
+
+.extend .snippet {
+  box-shadow: 0 0 0 1px #ffffff24 inset;
+}
+
+/* Why Agris: each problem a caller of Pearl Abyss meets, beside what Agris does about it */
+
+.why {
+  background: radial-gradient(50rem 24rem at 100% 0%, var(--brand-soft), transparent 70%), var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.fixes {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fix {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) 2.75rem minmax(0, 1.15fr);
+  align-items: stretch;
+}
+
+.fix-problem,
+.fix-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.3rem 1.4rem;
+  border-radius: var(--radius);
+}
+
+.fix-problem {
+  background: color-mix(in srgb, var(--deny) 6%, var(--bg-raised));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--deny) 22%, var(--line));
+}
+
+.fix-answer {
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--hit) 30%, var(--line)),
+    var(--shadow);
+  border-left: 3px solid var(--hit);
+}
+
+.fix-label {
+  font: 700 0.7rem/1.2 var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fix-problem .fix-label {
+  color: var(--deny);
+}
+
+.fix-answer .fix-label {
+  color: var(--hit);
+}
+
+.fix-problem p:not(.fix-label) {
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+
+.fix-answer p:not(.fix-label) {
+  font-size: 0.95rem;
+}
+
+.fix-arrow {
+  display: grid;
+  place-items: center;
+  color: var(--gold-strong);
+}
+
+.fix-uses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: auto 0 0;
+  padding: 0.5rem 0 0;
+  list-style: none;
+}
+
+.fix-uses li {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: var(--gold-strong);
+  font: 650 0.74rem/1.5 var(--sans);
+}
+
+/* Positioned, so text hidden for screen readers inside a table scrolls with it instead of widening the page. */
+.table-scroll {
+  position: relative;
+  overflow-x: auto;
+  margin-top: 1rem;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93rem;
+}
+
+th,
+td {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+thead th {
+  color: var(--muted);
+  font: 700 0.72rem/1.2 var(--sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+tbody th {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+td code {
+  display: inline-block;
+  margin: 0 0.4rem 0.3rem 0;
+}
+
+/* A setting in a table: its value, and under it the variable that sets it. */
+.setting-label,
+.setting-value {
+  display: block;
+}
+
+td .setting-value {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+th .setting-variable,
+td .setting-variable {
+  display: block;
+  width: fit-content;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 400;
+}
+
+/* Settings tables keep their columns readable and scroll sideways on a phone instead. */
+.settings {
+  min-width: 38rem;
+}
+
+.settings td.own {
+  color: var(--hit);
+  font-weight: 650;
+}
+
+.settings td.off {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.setting-none {
+  color: var(--muted);
+}
+
+/* Caching */
+
+.cache {
+  background: var(--bg-sunk);
+  border-block: 1px solid var(--line);
+}
+
+/* Three short points, numbered like the deploy steps. */
+.cache-points {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cache-point {
+  padding: 1.35rem 1.4rem 1.45rem;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+
+.cache-point-number {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.8rem;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd889, var(--gold));
+  color: var(--on-gold);
+  font: 700 0.95rem/1 var(--display);
+}
+
+.cache-point h3 {
+  font-size: 1.08rem;
+}
+
+.cache-point p {
+  margin-top: 0.4rem;
+}
+
+.cache-change h3,
+.cache-see h3 {
+  font: 700 1.25rem/1.2 var(--display);
+  letter-spacing: 0.03em;
+}
+
+/* How to see the cache at work, then how to change a default beside an example, and every setting in one table. */
+.cache-change,
+.cache-see {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 2.5rem;
+  align-items: center;
+  margin-top: 3.5rem;
+}
+
+.cache-change-copy p,
+.cache-see-copy p {
+  margin-top: 0.75rem;
+}
+
+.cache-change-copy .note {
+  margin-top: 0.6rem;
+}
+
+.cache-change + .table-scroll {
+  margin-top: 1.75rem;
+}
+
+/* A field's two settings share one row group: a line above it, none between them. */
+.cache-settings {
+  min-width: 44rem;
+}
+
+.cache-settings th,
+.cache-settings td {
+  padding-block: 0.4rem;
+  border-bottom: 0;
+  vertical-align: middle;
+}
+
+.cache-settings .cache-group-start > * {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.cache-settings tr:has(+ .cache-group-start) > *,
+.cache-settings tbody tr:last-child > * {
+  padding-bottom: 0.75rem;
+}
+
+.cache-settings tbody th {
+  vertical-align: top;
+}
+
+.cache-settings .setting-variable {
+  display: inline;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.cache-setting-label {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.cache-settings .cache-default {
+  color: var(--hit);
+  font-weight: 650;
+}
+
+.cache-legend td {
+  padding-block: 0.85rem;
+  border-top: 1px solid var(--line-strong);
+  background: var(--bg-sunk);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.cache-legend code {
+  display: inline;
+  margin: 0;
+}
+
+/*
+ * On a phone each setting is a line of its own: the variable, then its default and the demo's value, each named, under
+ * the field it belongs to.
+ */
+@media (max-width: 640px) {
+  .cache-settings {
+    min-width: 0;
+  }
+
+  .cache-settings thead {
+    display: none;
+  }
+
+  .cache-settings tbody {
+    display: block;
+  }
+
+  .cache-settings tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.1rem 1rem;
+    padding: 0.35rem 1rem;
+  }
+
+  .cache-settings .cache-group-start {
+    margin-top: 0.4rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .cache-settings tbody:first-of-type .cache-group-start,
+  .cache-settings .cache-legend + .cache-group-start {
+    margin-top: 0;
+    border-top: 0;
+  }
+
+  .cache-settings th,
+  .cache-settings td,
+  .cache-settings .cache-group-start > *,
+  .cache-settings tr:has(+ .cache-group-start) > *,
+  .cache-settings tbody tr:last-child > * {
+    padding: 0;
+    border: 0;
+  }
+
+  .cache-settings tbody th,
+  .cache-settings .cache-variable {
+    flex: 1 0 100%;
+  }
+
+  .cache-settings tbody th {
+    margin-bottom: 0.2rem;
+  }
+
+  .cache-settings .cache-default::before,
+  .cache-settings .cache-demo::before {
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .cache-settings .cache-default::before {
+    content: "Default ";
+  }
+
+  .cache-settings .cache-demo::before {
+    content: "Shared demo ";
+  }
+
+  .cache-settings .cache-legend {
+    margin-top: 0.85rem;
+    padding: 0.85rem 1rem;
+    border-top: 1px solid var(--line-strong);
+    background: var(--bg-sunk);
+  }
+
+  .cache-legend td {
+    border: 0;
+    background: none;
+  }
+}
+
+.cache-statuses {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cache-statuses li {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cache-statuses .live-chip {
+  justify-self: start;
+}
+
+/* Examples */
+
+.examples {
+  --examples-gap: 1.25rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--examples-gap);
+}
+
+/*
+ * Each card's four parts (header, facts, query, actions) sit on rows the cards beside it share, so the actions line up
+ * across a row and a result panel opening under one card grows the last row without moving any Run button.
+ */
+.example {
+  --example-padding: 1.4rem;
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  align-items: start;
+  row-gap: 1rem;
+  min-width: 0;
+  padding: var(--example-padding);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+
+.example header p {
+  margin-top: 0.4rem;
+  font-size: 0.95rem;
+}
+
+.example-meta {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.example-meta div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.example-meta dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.example-meta dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+/* Live queries: a Run button beside the example's actions, and the answer in a panel under them */
+
+/* `--live-layout` tells `src/live/panel.ts` where an open result sits: `below` the actions, or `beside` the query. */
+.live {
+  --live-layout: below;
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* The panel's parts set their own `display`; `hidden` must still win. */
+.live [hidden] {
+  display: none;
+}
+
+/* The play icon and the spinner share one box, so the button keeps its width while a query runs. */
+.live-run-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+}
+
+.live-run-icon > * {
+  grid-area: 1 / 1;
+}
+
+.live-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0;
+  animation: live-spin 700ms linear infinite;
+}
+
+.live[data-state="loading"] .live-play {
+  opacity: 0;
+}
+
+.live[data-state="loading"] .live-spinner {
+  opacity: 1;
+}
+
+@keyframes live-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.button[aria-disabled="true"] {
+  cursor: progress;
+  filter: saturate(0.6);
+}
+
+.button[aria-disabled="true"]:active {
+  transform: none;
+}
+
+.live-panel {
+  --live-well: color-mix(in srgb, var(--bg-sunk) 72%, var(--bg-raised));
+  min-width: 0;
+  border-radius: 12px;
+  background: var(--live-well);
+  box-shadow: 0 0 0 1px var(--line-strong) inset;
+  overflow: hidden;
+  animation: live-in 200ms var(--ease);
+}
+
+@keyframes live-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/*
+ * Wide screens: the examples sit two to a row, and a card whose result is open and expanded takes a whole row, its
+ * query on the left and the result on the right, so the cards after it move down. The query keeps the width it had in
+ * the grid, so its lines and its Run button stay where they were. The result takes the height of the query, at least
+ * `--live-beside-height`, and scrolls inside it, so an answer arriving never changes the row's height. Collapsing or
+ * closing the result puts the card back in the grid; `src/live/reflow.ts` animates both moves.
+ */
+@media (min-width: 64rem) {
+  .examples {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .example > .live {
+    --live-layout: beside;
+  }
+
+  .example:has(> .live[data-expanded="true"]) {
+    --live-beside-height: 24rem;
+    grid-column: 1 / -1;
+    grid-row: span 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto auto 1fr;
+    column-gap: calc(var(--examples-gap) + 2 * var(--example-padding));
+  }
+
+  .example:has(> .live[data-expanded="true"]) > :not(.live) {
+    grid-column: 1;
+  }
+
+  .example > .live[data-expanded="true"] {
+    display: contents;
+  }
+
+  .live[data-expanded="true"] > .live-actions {
+    grid-column: 1;
+    grid-row: 4;
+  }
+
+  .live[data-expanded="true"] > .live-panel {
+    display: flex;
+    flex-direction: column;
+    grid-column: 2;
+    grid-row: 1 / -1;
+    align-self: stretch;
+    contain: size;
+    contain-intrinsic-block-size: var(--live-beside-height);
+    animation-name: live-in-beside;
+  }
+
+  .live[data-expanded="true"] .live-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .live[data-expanded="true"] .live-well {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+@keyframes live-in-beside {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+/*
+ * The cards' reflow runs as a view transition (`src/live/reflow.ts`). Each card's group glides from its old box to its
+ * new one, showing both snapshots at their own size from the top left, so text never stretches while a card widens.
+ * The page stays live underneath: the root is not captured, and the overlay lets the pointer through. The overlay
+ * starts below the sticky header, so the cards pass under it as they do on the page.
+ */
+:root[data-live-reflow] {
+  view-transition-name: none;
+}
+
+::view-transition {
+  clip-path: inset(calc(var(--header-height) + 1px) 0 0 0);
+  pointer-events: none;
+}
+
+/* A widening card reveals its result from the left, and a narrowing one wipes it away; the margins keep its shadow. */
+::view-transition-group(*.live-card) {
+  clip-path: inset(-1.5rem -1px -1.5rem -1.5rem);
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease);
+}
+
+::view-transition-old(*.live-card),
+::view-transition-new(*.live-card) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease);
+}
+
+.live-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.live-summary {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  min-height: 1.75rem;
+}
+
+.live-running {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.live-chip {
+  --tone: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 30%, transparent) inset;
+  color: var(--ink);
+  font: 600 0.76rem/1.3 var(--mono);
+  white-space: nowrap;
+}
+
+.live-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.live-chip[data-tone="ok"],
+.live-chip[data-tone="hit"] {
+  --tone: var(--hit);
+}
+
+.live-chip[data-tone="miss"] {
+  --tone: var(--miss);
+}
+
+.live-chip[data-tone="stale"] {
+  --tone: var(--stale);
+}
+
+.live-chip[data-tone="error"] {
+  --tone: var(--deny);
+}
+
+.live-chip[data-tone="neutral"]::before {
+  content: none;
+}
+
+.live-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.live-panel .copy {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
+.live-panel .copy:hover {
+  background: color-mix(in srgb, var(--ink) 15%, transparent);
+}
+
+.live-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.live-tool:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
+.live-toggle .icon {
+  transition: transform 200ms var(--ease);
+}
+
+.live-toggle[aria-expanded="false"] .icon {
+  transform: rotate(-90deg);
+}
+
+.live-body {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.7rem;
+}
+
+.live[data-state="loading"] .live-body {
+  opacity: 0.5;
+}
+
+.live-note {
+  --tone: var(--deny);
+  margin: 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--tone);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tone) 8%, transparent);
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.live-note[data-tone="failed"] {
+  --tone: var(--stale);
+}
+
+.live-note ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  font: 0.82rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.live-note-lead {
+  font-weight: 600;
+}
+
+.live-countdown {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.live-meta {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0 0.75rem;
+  font-size: 0.78rem;
+}
+
+.live-meta div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.live-meta dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.live-meta dd {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.live-well {
+  max-height: 22rem;
+  margin: 0;
+  padding: 0.1rem 0.9rem 0.9rem;
+  overflow: auto;
+  color: var(--muted);
+  font: 0.8rem/1.55 var(--mono);
+  tab-size: 2;
+  overscroll-behavior: contain;
+}
+
+.live-well:focus-visible {
+  outline-offset: -3px;
+}
+
+.j-key {
+  color: var(--brand);
+}
+
+.j-string {
+  color: var(--hit);
+}
+
+.j-number {
+  color: var(--gold-strong);
+}
+
+.j-boolean {
+  color: var(--miss);
+}
+
+.j-null {
+  color: var(--bypass);
+  font-style: italic;
+}
+
+.j-punctuation {
+  color: var(--muted);
+}
+
+/* Code */
+
+.snippet {
+  margin: 0;
+  min-width: 0;
+  border-radius: 10px;
+  background: var(--night-1);
+  box-shadow: 0 0 0 1px #ffffff12 inset;
+  overflow: hidden;
+}
+
+.snippet figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.55rem 0.45rem 0.95rem;
+  border-bottom: 1px solid #ffffff14;
+  color: var(--night-muted);
+  font: 700 0.7rem/1 var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.copy {
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: #ffffff10;
+  color: var(--night-ink);
+  font: 600 0.74rem/1 var(--sans);
+  cursor: pointer;
+}
+
+.copy:hover {
+  background: #ffffff20;
+}
+
+.snippet pre {
+  margin: 0;
+  padding: 0.95rem 1rem;
+  font-size: 0.83rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  background: transparent !important;
+}
+
+/* Deploy */
+
+.deploy {
+  background: radial-gradient(50rem 24rem at 0% 0%, var(--gold-soft), transparent 70%), var(--bg);
+}
+
+.deploy-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.deploy-steps {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deploy-steps li {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.deploy-steps li > div {
+  min-width: 0;
+}
+
+.deploy-number {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd889, var(--gold));
+  color: var(--on-gold);
+  font: 700 1rem/1 var(--display);
+  box-shadow: 0 6px 16px -8px #d9a43a;
+}
+
+.deploy-done .deploy-number {
+  background: var(--hit);
+  color: var(--bg);
+  box-shadow: none;
+}
+
+.deploy-steps h3 {
+  margin-top: 0.35rem;
+}
+
+.deploy-steps p {
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+
+.deploy-steps pre {
+  margin: 0.6rem 0 0;
+  padding: 0.75rem 0.95rem;
+  border-radius: 10px;
+  background: var(--night-1);
+  color: var(--night-ink);
+  font: 0.84rem/1.55 var(--mono);
+  overflow-x: auto;
+}
+
+.deploy-notes {
+  display: grid;
+  gap: 1rem;
+}
+
+.note-card {
+  padding: 1.15rem 1.25rem;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--shadow);
+}
+
+.note-card p {
+  margin-top: 0.35rem;
+  font-size: 0.93rem;
+}
+
+/* The shared demo */
+
+.demo {
+  background: var(--bg-sunk);
+  border-block: 1px solid var(--line);
+}
+
+/* The demo's story above its settings, which need the full width for their names. */
+.demo-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+}
+
+.demo h2 {
+  margin-top: 0;
+}
+
+/* Footer */
+
+.site-footer {
+  padding: 2.75rem 0 3rem;
+  background: var(--night-1);
+  color: var(--night-muted);
+  font-size: 0.88rem;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.footer-brand p {
+  margin-top: 0.8rem;
+  max-width: 24rem;
+}
+
+.disclaimer {
+  max-width: 38rem;
+}
+
+.footer-links {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer a {
+  color: var(--night-ink);
+}
+
+/* Narrow screens */
+
+@media (max-width: 960px) {
+  .hero-grid,
+  .deploy-grid,
+  .cache-change,
+  .cache-see,
+  .cache-points {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-grid {
+    min-height: 0;
+  }
+
+  .hero {
+    padding-top: 0;
+  }
+
+  /*
+   * On narrow screens the art is a band above the copy, placed so a phone shows Agris from the logo to the scales. The
+   * band is at most 960px wide and 312px tall, so covering it draws the artwork at most 960px wide, under half its
+   * natural size.
+   */
+  .hero-backdrop {
+    position: relative;
+    left: auto;
+    width: 100%;
+    height: clamp(17rem, 40vw, 19.5rem);
+    margin: 0 0 1rem;
+    -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+    mask-image: linear-gradient(180deg, #000 70%, transparent);
+  }
+
+  .hero-backdrop img {
+    object-fit: cover;
+    object-position: 55% 0%;
+  }
+
+  .hero-backdrop::after {
+    content: none;
+  }
+
+  .freedoms {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .flow-steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.1rem;
+  }
+
+  .flow-step {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    column-gap: 0.9rem;
+  }
+
+  .flow-step .flow-number {
+    grid-row: span 2;
+    margin: 0;
+  }
+
+  .flow-step:not(:last-child)::after {
+    top: 2.4rem;
+    bottom: -1rem;
+    left: 1rem;
+    right: auto;
+    width: 1px;
+    height: auto;
+    background: linear-gradient(180deg, #e9b95599, #e9b95520);
+  }
+
+  .layers,
+  .extend {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A problem above its answer, joined by an arrow pointing down. */
+  .fix {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 2.25rem auto;
+  }
+
+  .fix-arrow {
+    transform: rotate(90deg);
+  }
+
+  .fixes {
+    gap: 1.75rem;
+  }
+
+  .footer-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  section {
+    padding: 3.75rem 0;
+  }
+
+  .wrap {
+    width: min(74rem, 100% - 1.75rem);
+  }
+
+  .hero {
+    padding-top: 0;
+  }
+
+  .actions .button {
+    flex: 1 1 100%;
+  }
+
+  .nav-list {
+    gap: 0;
+    font-size: 0.86rem;
+  }
+
+  .nav-list a {
+    padding: 0.4rem 0.5rem;
+  }
+
+  .nav-wide,
+  .nav-github span {
+    display: none;
+  }
+
+  .freedoms {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .extend {
+    padding: 1.25rem;
+  }
+
+  .layer dl div,
+  .example-meta div,
+  .live-meta div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  .hero-stack {
+    justify-content: flex-start;
+    gap: 0.4rem 1.2rem;
+    font-size: 0.72rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .button {
+    transition: none;
+  }
+
+  .live-panel,
+  .live-spinner {
+    animation: none;
+  }
+}

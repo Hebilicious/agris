@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.workers.json",
+  "compilerOptions": {
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.ts", "worker-env.d.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

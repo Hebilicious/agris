@@ -1,0 +1,14 @@
+---
+// A setting's variable name, such as `CACHE_MARKET_ITEMS_MAX_AGE_SECONDS`, allowed to wrap after any underscore so a
+// long name breaks between its words in a narrow column.
+interface Props {
+  name: string;
+}
+
+const { name } = Astro.props;
+const words = name.split("_");
+---
+
+<code class="setting-variable"
+  >{words.map((word, index) => (index < words.length - 1 ? <Fragment>{word}_<wbr /></Fragment> : word))}</code
+>

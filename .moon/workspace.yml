@@ -1,0 +1,47 @@
+projects:
+  agris: "."
+  # Libraries
+  core: "packages/core"
+  catalog-subgraph: "packages/catalog-subgraph"
+  market-subgraph: "packages/market-subgraph"
+  pearl-abyss: "packages/pearl-abyss"
+  invocation-budget: "packages/invocation-budget"
+  worker-runtime: "packages/worker-runtime"
+  # The Worker packages
+  gateway-worker: "apps/gateway"
+  market-worker: "apps/market"
+  catalog-worker: "apps/catalog"
+  # The website and the Alchemy stack
+  website: "website"
+  infra: "infra"
+  # Repository tools and tests
+  schema: "tools/schema"
+  catalog-tools: "tools/catalog"
+  smoke: "tools/smoke"
+  tests: "tests"
+
+defaultProject: "agris"
+telemetry: false
+versionConstraint: ">=2.5.3 <2.6.0"
+
+vcs:
+  defaultBranch: "main"
+
+hasher:
+  walkStrategy: "glob"
+  ignorePatterns:
+    - "node_modules/**"
+    - "**/node_modules/**"
+    - ".artifacts/**"
+    - "**/.artifacts/**"
+    - "**/.cloudflare/**"
+    - "**/.wrangler/**"
+    - "**/.alchemy/**"
+    - "dist/**"
+    - ".pnpm-store/**"
+    - ".proto/**"
+    - ".worktrees/**"
+
+pipeline:
+  installDependencies:
+    - "javascript"

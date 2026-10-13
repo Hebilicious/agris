@@ -1,0 +1,11 @@
+{
+  // The stack imports every Worker's layer, and the Workers import the gateway, market and catalog modules, so it is
+  // checked as Worker code: with the Workers runtime types, as the Worker projects themselves are.
+  "extends": "../tsconfig.workers.json",
+  "compilerOptions": {
+    "lib": ["ES2025", "DOM", "DOM.Iterable", "DOM.AsyncIterable", "ESNext.Disposable"],
+    "types": ["@cloudflare/workers-types", "node"],
+    "resolveJsonModule": true
+  },
+  "include": ["alchemy.run.ts", "bundle.ts", "src/**/*.ts"]
+}

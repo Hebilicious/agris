@@ -1,0 +1,41 @@
+{
+  "name": "@agris/catalog-subgraph",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./catalog": {
+      "types": "./src/catalog.ts",
+      "import": "./dist/catalog.js"
+    },
+    "./catalog-search-artifact": {
+      "types": "./src/catalog-search-artifact.ts",
+      "import": "./dist/catalog-search-artifact.js"
+    },
+    "./item-name-search": {
+      "types": "./src/item-name-search.ts",
+      "import": "./dist/item-name-search.js"
+    },
+    "./generated-catalog-search-artifact": {
+      "types": "./src/generated-catalog-search-artifact.ts",
+      "import": "./dist/generated-catalog-search-artifact.js"
+    }
+  },
+  "dependencies": {
+    "@agris/pearl-abyss": "workspace:*",
+    "@apollo/subgraph": "catalog:",
+    "@pothos/core": "catalog:",
+    "@pothos/plugin-directives": "catalog:",
+    "@pothos/plugin-federation": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "graphql": "catalog:",
+    "graphql-yoga": "catalog:",
+    "typescript": "catalog:",
+    "xstate": "catalog:"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@agris/infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agris's deploy definition: one Alchemy stack whose stages are the hosted demo, the docs site and every self-hosted deployment.",
+  "type": "module",
+  "exports": {
+    "./settings": {
+      "types": "./src/settings.ts",
+      "import": "./src/settings.ts"
+    }
+  },
+  "dependencies": {
+    "@agris/catalog-worker": "workspace:*",
+    "@agris/core": "workspace:*",
+    "@agris/gateway-worker": "workspace:*",
+    "@agris/invocation-budget": "workspace:*",
+    "@agris/market-worker": "workspace:*",
+    "@cloudflare/workers-types": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@types/node": "catalog:",
+    "alchemy": "catalog:",
+    "effect": "catalog:",
+    "graphql": "catalog:",
+    "typescript": "catalog:"
+  }
+}

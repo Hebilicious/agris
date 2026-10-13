@@ -1,0 +1,95 @@
+---
+import "../../vendor/anatomy/iso.css";
+import "../styles/global.css";
+import "../styles/figure.css";
+
+import { DEMO_GRAPHQL, NEW_TAB, README_CREDITS, REPOSITORY } from "../site.ts";
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6efe0" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#120c1d" media="(prefers-color-scheme: dark)" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content={new URL("/og.jpg", Astro.site).href} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="preload" href="/fonts/cinzel-latin-wght.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
+  </head>
+  <body class="iso">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="/" aria-label="Agris home">
+          <img src="/favicon.svg" alt="" width="28" height="28" />
+          <span>Agris</span>
+        </a>
+        <nav aria-label="Sections">
+          <ul class="nav-list">
+            <li class="nav-wide"><a href="#why">Why Agris</a></li>
+            <li><a href="#machine">How it works</a></li>
+            <li class="nav-wide"><a href="#stack">Stack</a></li>
+            <li class="nav-wide"><a href="#cache">Cache</a></li>
+            <li class="nav-wide"><a href="#queries">Queries</a></li>
+            <li><a href="#deploy">Deploy</a></li>
+            <li>
+              <a class="nav-github" href={REPOSITORY} {...NEW_TAB}>
+                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+                  ><path
+                    fill="currentColor"
+                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+                  ></path></svg
+                >
+                <span>GitHub</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href="/" aria-label="Agris home">
+            <img src="/favicon.svg" alt="" width="28" height="28" />
+            <span>Agris</span>
+          </a>
+          <p>Free and open source: the software and the artwork are MIT licensed.</p>
+        </div>
+        <p class="disclaimer">
+          Agris is an unofficial community project, not affiliated with, endorsed by, or sponsored by Pearl Abyss or
+          Arsha. Black Desert and Black Desert Online are trademarks of Pearl Abyss. The software is provided as is,
+          without warranty.
+        </p>
+        <ul class="footer-links">
+          <li><a href={REPOSITORY} {...NEW_TAB}>Source on GitHub</a></li>
+          <li><a href={README_CREDITS} {...NEW_TAB}>Credits</a></li>
+          <li><a href={DEMO_GRAPHQL} {...NEW_TAB}>GraphiQL</a></li>
+          <li><a href="/llms.txt">llms.txt</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>

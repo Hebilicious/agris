@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.workers.json",
+  "compilerOptions": {
+    "rootDir": "."
+  },
+  "include": ["caller/src/**/*.ts", "worker-env.d.ts"]
+}

@@ -1,0 +1,20 @@
+# Every source a task in this workspace can read from another project. Moon does not fold a dependency task's hash
+# into its dependents, so a task that runs, imports or reads another project's code lists this group in its inputs;
+# a `deps` entry orders tasks but does not invalidate a cached result.
+fileGroups:
+  agris-sources:
+    - "/packages/*/src/**/*"
+    - "/packages/*/package.json"
+    - "/packages/*/tsconfig.json"
+    - "/apps/*/src/**/*"
+    - "/apps/*/package.json"
+    - "/tools/schema/artifacts/**/*"
+    - "/tools/schema/src/schema-documentation.ts"
+    - "/data/catalog/**/*"
+    - "/tools/catalog/src/**/*.ts"
+    - "/website/src/deployment.ts"
+    - "/website/public/favicon.svg"
+    - "/infra/src/**/*"
+    - "/infra/package.json"
+    - "/tsconfig.node.json"
+    - "/tsconfig.workers.json"

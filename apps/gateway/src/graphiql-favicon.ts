@@ -1,0 +1,34 @@
+/**
+ * Agris's icon, the website's `public/favicon.svg`, for the GraphiQL page. It is inlined so the page shows it on any
+ * deployment without fetching it from somewhere else; the public gateway scenario checks it matches the website's file.
+ */
+export const AGRIS_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Agris</title>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#43247a"/>
+      <stop offset="1" stop-color="#170c2b"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe6a3"/>
+      <stop offset="1" stop-color="#d89c2b"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#night)"/>
+  <g fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20.5 51 32 18 43.5 51" stroke-width="5.2"/>
+    <path d="M25.5 40h13" stroke-width="4.2"/>
+    <path d="M9 20.5h46" stroke-width="4.4"/>
+    <path d="M12 21 7 36M12 21l5 15M52 21l-5 15M52 21l5 15" stroke-width="2.4"/>
+  </g>
+  <g fill="url(#gold)">
+    <path d="M3.5 35.5h17a8.5 6.5 0 0 1-17 0z"/>
+    <path d="M43.5 35.5h17a8.5 6.5 0 0 1-17 0z"/>
+    <circle cx="32" cy="13" r="4.6"/>
+  </g>
+  <circle cx="32" cy="13" r="2" fill="#2a1650"/>
+</svg>
+`;
+
+/** The icon as a `data:` URL, which a `<link rel=icon>` and GraphiQL's `favicon` option both take. */
+export const AGRIS_FAVICON_URL = `data:image/svg+xml,${encodeURIComponent(AGRIS_FAVICON_SVG)}`;

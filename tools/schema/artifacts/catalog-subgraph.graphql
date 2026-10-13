@@ -1,0 +1,90 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@key"])
+
+"""A Black Desert item, named in one language."""
+type Item @key(fields: "id locale") {
+  """The game's item ID: a positive whole number, as a string."""
+  id: ID!
+  """The language of `name`."""
+  locale: ItemLocale!
+  """
+  The item's name as the game shows it. Null when the ID is not a known item.
+  """
+  name: String
+  """
+  The item's grade, a whole number from 0 up. Null when the ID is not a known item.
+  """
+  grade: Int
+}
+
+"""
+A language for item names. Prices and counts are the same in every language.
+"""
+enum ItemLocale {
+  """English."""
+  EN
+  """German."""
+  DE
+  """French."""
+  FR
+  """European Spanish."""
+  ES_EU
+  """Latin American Spanish."""
+  ES
+  """Japanese."""
+  JA
+  """Korean."""
+  KO
+  """Portuguese."""
+  PT
+  """Russian."""
+  RU
+  """Thai."""
+  TH
+  """Turkish."""
+  TR
+  """Traditional Chinese, as used in Taiwan."""
+  ZH_TW
+}
+
+"""The items whose name matches a `searchItems` query."""
+type ItemSearchResult {
+  """
+  Up to `first` matches: exact names first, then names that start with the query, then the rest, each group in name order.
+  """
+  items: [Item!]!
+  """How many items match in total, which can be more than `items` holds."""
+  totalCount: Int!
+}
+
+"""Read-only queries over the Central Market and the item catalog."""
+type Query {
+  """One item by ID. Null when the ID is not a known item."""
+  item(
+    """The item ID: a positive whole number, as a string."""
+    id: ID!
+    """The language for the item's name."""
+    locale: ItemLocale! = EN
+  ): Item
+  """
+  Items by ID, in the order given, duplicates included. An unknown ID still returns an item, with null `name` and `grade`.
+  """
+  items(
+    """Item IDs: positive whole numbers, as strings."""
+    ids: [ID!]!
+    """The language for the items' names."""
+    locale: ItemLocale! = EN
+  ): [Item!]!
+  """
+  Items whose name contains `query`, ignoring case, accents, spaces and punctuation: `blackstone` finds "Black Stone".
+  """
+  searchItems(
+    """
+    The text to find: at least 3 characters, not counting spaces and punctuation.
+    """
+    query: String!
+    """The language whose names are searched and returned."""
+    locale: ItemLocale!
+    """How many matches to return, from 1 to 100."""
+    first: Int! = 50
+  ): ItemSearchResult!
+}
