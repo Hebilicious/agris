@@ -374,9 +374,10 @@ export function mountExchange(root: HTMLElement): void {
     let moving = false;
     CELLS.forEach((cell, index) => {
       const element = glasses[index];
-      if (cell.kind === null || cell.kind === "search" || element === null || element === undefined) return;
+      if (cell.kind === null || element === null || element === undefined) return;
       const query = byKind.get(cell.kind);
-      if (query === undefined) return;
+      // A pigeonhole for an answer that is never stored is blanked off, and its hourglass holds no sand.
+      if (query === undefined || query.policy.mode === "no-store") return;
       const glass = hourglassOf(model, query, sim);
       const shown = glassShown[index]!;
       const k = calm ? 1 : 1 - Math.exp(-dt / 0.22);

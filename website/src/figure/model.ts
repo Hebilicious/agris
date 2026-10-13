@@ -2,8 +2,9 @@
  * The pure model behind Fig 1, "The Agris exchange". Every number the figure shows, and every part it moves, comes
  * from these functions. Nothing here touches the DOM, so the page and a Node test read the same rules.
  *
- * It is an illustration, not the gateway: it mirrors the gateway's cache policy and Cloudflare's rate limiter and
- * edge cache closely enough to explain them (a fixed one-minute window, fresh and stale-while-revalidate windows), with
+ * It is an illustration, not the gateway: it mirrors the gateway's cache policy, its per-visitor limit and Cloudflare's
+ * edge cache closely enough to explain them (a fixed one-minute window where the gateway refills a token bucket, fresh
+ * and stale-while-revalidate windows), with
  * the windows and limits read from the gateway's own policy and `src/deployment.ts`.
  *
  * Time is simulated seconds. The page advances it by real seconds times the figure's speed, so a 60 second window can

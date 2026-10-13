@@ -89,7 +89,7 @@ import {
 } from "./parts.ts";
 import { DEMO, SELF_HOSTED } from "../facts.ts";
 import { lineAssembly, ROUTE_PATH } from "./line.ts";
-import { durationOf } from "./model.ts";
+import { durationOf, type FigureQuery, type QueryKind } from "./model.ts";
 
 const S = (paths: SolidPaths, style: SolidStyle = {}) => solidSvg(paths, style);
 const L = lineSvg;
@@ -344,7 +344,7 @@ function turnstileBack(): string {
     }),
   );
   out.push(S(cyl(PAWL_POST[0], PAWL_POST[1], 1.4, 3, top + 0.6, 16), { tone: "mid", crease: "none" }));
-  // A self-hosted gateway limits no visitor by default, so the turnstile counts the shared demo's limit.
+  // The turnstile counts the shared demo's limit, the smallest a reader meets, so a flood reaches its 429 quickly.
   out.push(live("ratchet", ratchetSvg(0, DEMO.clientRateLimit.limit)));
   out.push(S(cyl(x, y, 3.2, top + TURNSTILE.wheelH, 1.6, 24, 0.3), { tone: "mid" }));
   out.push(screws([[x, y, top + TURNSTILE.wheelH + 1.6]], 0.55));
@@ -479,7 +479,11 @@ function gaugeFront(): string {
 
 const CAVITY = "fx-cavity";
 
-function rack(): string {
+/**
+ * The rack, with one pigeonhole per card. A card whose query the gateway never stores gets a pigeonhole blanked off
+ * with a screwed cover, a plug with no keyway and an empty hourglass; `stored` says which cards those are.
+ */
+function rack(stored: (kind: QueryKind) => boolean): string {
   const out: string[] = [];
   const plinth = insetPlan(RACK, -2);
   out.push(S(slab(plinth, 0, RACK_Z.plinth, 4, 0.5), { tone: "lo" }));
@@ -517,9 +521,10 @@ function rack(): string {
       out.push(tagPlate(cx, cz));
       return;
     }
-    out.push(hole(index, cx, cz, spec.kind === "search"));
-    out.push(lockPlug(index, cx, cz, spec.kind === "search"));
-    out.push(hourglass(index, cx, cz, spec.kind === "search"));
+    const blanked = !stored(spec.kind);
+    out.push(hole(index, cx, cz, blanked));
+    out.push(lockPlug(index, cx, cz, blanked));
+    out.push(hourglass(index, cx, cz, blanked));
   });
   return out.join("");
 }
@@ -553,7 +558,7 @@ function hole(index: number, cx: number, cz: number, blanked: boolean): string {
   );
   out.push(L(opening, { tone: "lo" }));
   if (blanked) {
-    // `searchItems` is never stored, so its pigeonhole is blanked off with a screwed cover.
+    // This card's answer is never stored, so its pigeonhole is blanked off with a screwed cover.
     const cover: Plan = { x: x0 - 1.2, y: RACK_FACE, w: HOLE.w + 2.4, d: 0.8, r: 0.3 };
     out.push(S(slab(cover, z0 - 1.2, HOLE.h + 2.4, 2), { tone: "mid", crease: "faint" }));
     out.push(
@@ -954,13 +959,17 @@ function hull(points: Flat[]): string {
 /** The card's resting offset: the top of the stack in the tray. */
 export const CARD_HOME = translateAlong(P, [AT.tray, 0, TRAY_FLOOR + (TRAY_STACK - 1) * (CARD.h + 0.1) - CARD_Z]);
 
-/** The whole drawing, back to front. */
-export function figureBody(): string {
+/**
+ * The whole drawing, back to front, for the figure's cards: each card's pigeonhole is open when the gateway's cache
+ * policy for its query stores the answer, and blanked off when it does not.
+ */
+export function figureBody(queries: readonly FigureQuery[]): string {
+  const storedKinds = new Set(queries.filter((query) => query.policy.mode === "store").map((query) => query.kind));
   return [
     base(),
     // The back row: the two cabinets and what stands behind the track.
     cabinet(),
-    rack(),
+    rack((kind) => storedKinds.has(kind)),
     exitLine(),
     carouselBack(),
     carouselHub(),

@@ -57,6 +57,11 @@ function policyOf(policy: GatewayCachePolicy): CachePolicy {
 async function check(example: Example): Promise<CheckedExample> {
   const live = await normalized(PUBLIC, example);
   const demo = await normalized(DEMO_PROTOCOL, example);
+  // The prose beside a query must not promise a cache behaviour the gateway does not give it.
+  const claimsNeverStored = /never stored|not cached|always runs/i.test(example.text);
+  if (claimsNeverStored && live.cachePolicy.mode !== "no-store") {
+    throw new Error(`Example "${example.id}" says it is never stored, but the gateway stores its answer`);
+  }
   return {
     ...example,
     policy: policyOf(live.cachePolicy),

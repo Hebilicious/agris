@@ -35,12 +35,16 @@ const demoShortest = Math.min(...freshnessRowsOf(DEMO.cacheFreshness).map((row) 
 const { maxDepth, maxFields, maxAliases } = PUBLIC_DOCUMENT_LIMITS;
 const demoGlobal =
   DEMO.globalRateLimit === null ? "" : ` and ${ratePhrase(DEMO.globalRateLimit, "")} per Cloudflare location`;
+const demoMarket =
+  DEMO.marketClientLimit === null
+    ? ""
+    : `, and to ${ratePhrase(DEMO.marketClientLimit, " queries")} per IP that read the Central Market, counted exactly`;
 
 const TEXT = `# Agris
 
 > Agris is a free and open-source (MIT), read-only, federated GraphQL API over the Black Desert Online Central Market. It runs as Cloudflare Workers that you deploy to your own Cloudflare account: a gateway running Hive Gateway over an Apollo Federation v2 supergraph with its own cache Worker, plus a catalog subgraph and a market subgraph reached over Service Bindings. It serves prices, stock, order books, price history, hot items and the registration queue for 12 market regions, joined with item names in 12 languages and an item-name search.
 
-Use Agris by deploying your own copy. It answers on \`agris.<subdomain>.workers.dev\` by default, and on any custom domain or route you add. The hosted demo API (${DEMO_GRAPHQL}, health check at ${DEMO_HEALTH}) is a shared courtesy instance limited to ${perMinute(DEMO.clientRateLimit)} per IP${demoGlobal}, with long cache times; it may be rate limited or switched off at any time. Do not point an application, agent workflow, scheduled job or bulk export at it. This website (${SITE_ORIGIN}) is static documentation on its own origin and serves no API.
+Use Agris by deploying your own copy. It answers on \`agris.<subdomain>.workers.dev\` by default, and on any custom domain or route you add. The hosted demo API (${DEMO_GRAPHQL}, health check at ${DEMO_HEALTH}) is a shared courtesy instance limited to ${perMinute(DEMO.clientRateLimit)} per IP${demoGlobal}${demoMarket}, with long cache times; it may be rate limited or switched off at any time. Do not point an application, agent workflow, scheduled job or bulk export at it. This website (${SITE_ORIGIN}) is static documentation on its own origin and serves no API.
 
 Key facts:
 
@@ -50,7 +54,7 @@ Key facts:
 - Item IDs are the game's numeric item IDs, passed as GraphQL \`ID\` strings.
 - Regions: EU, NA, ASIA, MENA, KR, RU, JP, TW, SA, CONSOLE_EU, CONSOLE_NA, CONSOLE_ASIA. Name locales: EN, DE, FR, ES, ES_EU, PT, RU, TR, JA, KO, TH, ZH_TW.
 - ${SELF_HOSTED.clientRateLimit === null ? "A self-hosted gateway sets no per-IP rate limit by default; its deployer can turn one on" : `A self-hosted gateway allows ${perMinute(SELF_HOSTED.clientRateLimit)} per IP by default`}. The default settings deploy on the Cloudflare Workers Free plan; a paid plan lets the deployer raise the subrequest limit.
-- Stack: Apollo Federation v2 subgraphs built with Pothos and served by GraphQL Yoga, composed with GraphQL Mesh Compose and executed by Hive Gateway inside a Cloudflare Worker, which runs any Envelop plugin added to the gateway's plugin list; Service Bindings, one Durable Object per Pearl Abyss host, Workers rate limiting and the Workers cache; TypeScript, XState, Effect and Effect Schema; Alchemy for deploys; moon, proto, pnpm, oxlint, oxfmt, Vitest with the Workers pool, Gherkin features and an Astro site.
+- Stack: Apollo Federation v2 subgraphs built with Pothos and served by GraphQL Yoga, composed with GraphQL Mesh Compose and executed by Hive Gateway inside a Cloudflare Worker, which runs any Envelop plugin added to the gateway's plugin list; Service Bindings, one Durable Object per Pearl Abyss host, Workers rate limiting, an optional Durable Object token bucket per client for queries that read the Central Market, and the Workers cache; TypeScript, XState, Effect and Effect Schema; Alchemy for deploys; moon, proto, pnpm, oxlint, oxfmt, Vitest with the Workers pool, Gherkin features and an Astro site.
 - License: MIT. No account, no API key, no tracking.
 - Agris is unofficial and not affiliated with Pearl Abyss or Arsha.
 
