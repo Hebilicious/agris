@@ -272,7 +272,7 @@ async function requestCatalogItems(
             cacheStatus: "MISS",
             cachePolicy: operation.cachePolicy,
             hasGraphqlErrors: false,
-            totalUpstreamUnavailable: false,
+            upstream: "answered",
           });
           return Response.json(
             {
@@ -296,7 +296,7 @@ async function requestCatalogItems(
           cacheStatus: "MISS",
           cachePolicy: operation.cachePolicy,
           hasGraphqlErrors,
-          totalUpstreamUnavailable: false,
+          upstream: "answered",
         });
         return Response.json(
           hasGraphqlErrors

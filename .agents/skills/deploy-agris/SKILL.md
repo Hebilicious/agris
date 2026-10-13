@@ -69,7 +69,7 @@ curl -sS "$URL/graphql" -H 'content-type: application/json' \
   -d '{"query":"{ market(region: EU) { observedAt items(ids: [\"44195\"]) { item { name } isListed basePrice } } }"}'
 ```
 
-Done when `/health` answers `200`, the first query returns a non-null `data.item.name`, and the second returns `data.market.items` with a price. A `503` on the market query alone means Pearl Abyss did not answer: retry once after a minute, then try another region (`NA`). A `429` means a rate limit the user turned on was hit: wait for `Retry-After`.
+Done when `/health` answers `200`, the first query returns a non-null `data.item.name`, and the second returns `data.market.items` with a price. A `503` on the market query alone means Pearl Abyss did not answer: retry once after a minute, then try another region (`NA`). A `429` means a rate limit was hit, one the user turned on or the market Worker's Pearl Abyss limit: wait for `Retry-After`.
 
 ## 6. Hand off
 
