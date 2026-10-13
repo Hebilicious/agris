@@ -3,13 +3,13 @@
 // time, from `src/figure/art.ts`; the script below moves it in the browser. Every number it shows comes from
 // `src/facts.ts` or from the cache policy the gateway chose for each query (`src/queries/examples-policy.ts`), and
 // reaches the browser in the data block below.
-import { figureSvg } from "../../vendor/anatomy/iso-kit.ts";
 import { DEMO, MAXIMUM_GATEWAY_REQUEST_BYTES, PUBLIC_DOCUMENT_LIMITS, rateOf, SELF_HOSTED } from "../facts.ts";
 import { figureBody } from "../figure/art.ts";
 import { hotspots, type HotspotId } from "../figure/hotspots.ts";
 import { HEIGHT, WIDTH } from "../figure/layout.ts";
 import { durationOf, LOCALES, type MachineFacts } from "../figure/model.ts";
 import { IDLE_VIEW, STEPS } from "../figure/steps.ts";
+import { jsonForScript } from "../json-script.ts";
 import { FIGURE_QUERIES } from "../queries/examples-policy.ts";
 import Icon from "./Icon.astro";
 
@@ -64,21 +64,15 @@ const PARTS: Record<HotspotId, { name: string; text: string }> = {
   },
 };
 
-const hotLayer = `<g class="fx-hots">${hotspots()
-  .map(
-    ({ id, path }) =>
-      `<path class="fx-hot" d="${path}" data-hot="${id}" tabindex="0" role="button" aria-label="${PARTS[id].name}. ${PARTS[id].text}"/>`,
-  )
-  .join("")}</g>`;
+const hots = hotspots().map(({ id, path }) => ({ id, path, label: `${PARTS[id].name}. ${PARTS[id].text}` }));
 
 const label = `A counting-house machine on a bench that stands for the Agris gateway. A query card leaves the client's tray, passes a turnstile whose ${rate.limit}-tooth ratchet wheel is the rate limit, is punched with its canonical cache key, and passes a gauge with three fences for the query limits. A rack of six pigeonholes, each with a lock and an hourglass, is the edge cache: a card whose key matches a stored answer gets it back at once. On a miss the card goes on to a splitter whose two rods are the private Service Bindings: one to a twelve-drawer card cabinet, the catalog, and one to a carousel with ${carriages} cradles, the Pearl Abyss coordinator, whose line is the only one that leaves the bench. The answer is stamped with its Cache-Control, filed in its pigeonhole if it may be stored, and returned to the tray.`;
 
-// A group rather than an image: the parts' hotspots inside it are buttons a keyboard or screen reader can reach.
-const svg = figureSvg({ width: WIDTH, height: HEIGHT, label, body: figureBody() + hotLayer }).replace(
-  'role="img"',
-  'role="group"',
-);
-const data = JSON.stringify({ machine, queries: FIGURE_QUERIES });
+// The art is markup the kit generates from build-time constants; the hotspots and every attribute that carries words are
+// rendered below as Astro markup, which escapes them. The SVG is a group rather than an image: the parts' hotspots inside
+// it are buttons a keyboard or screen reader can reach.
+const art = figureBody();
+const data = jsonForScript({ machine, queries: FIGURE_QUERIES });
 const picks = FIGURE_QUERIES.map((query) => ({
   kind: query.kind,
   label: query.label,
@@ -159,7 +153,12 @@ const tips = Object.fromEntries(Object.entries(PARTS).map(([id, part]) => [id, p
       role="group"
       aria-label="The Agris exchange. Enter sends the chosen query, keys 1 to 5 send one of the five queries, S skips ahead, F floods the turnstile, R resets."
     >
-      <Fragment set:html={svg} />
+      <svg xmlns="http://www.w3.org/2000/svg" class="iso-svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="group" aria-label={label}>
+        <Fragment set:html={art} />
+        <g class="fx-hots">
+          {hots.map(({ id, path, label }) => <path class="fx-hot" d={path} data-hot={id} tabindex="0" role="button" aria-label={label} />)}
+        </g>
+      </svg>
       <div class="fx-tip" data-tip role="tooltip" hidden>
         <strong data-tip-name></strong>
         <span data-tip-text></span>
@@ -169,7 +168,7 @@ const tips = Object.fromEntries(Object.entries(PARTS).map(([id, part]) => [id, p
     <p class="fx-narration" data-narration>{IDLE_VIEW.narration}</p>
     <p class="fx-announce" data-announce aria-live="polite"></p>
     <script type="application/json" data-fx set:html={data} />
-    <script type="application/json" data-tips set:html={JSON.stringify(tips)} />
+    <script type="application/json" data-tips set:html={jsonForScript(tips)} />
   </div>
   <figcaption class="iso-legend" id="fx-caption">
     <span class="iso-keys">
