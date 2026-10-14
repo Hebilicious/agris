@@ -2,7 +2,8 @@ import type { NormalizedGatewayRequest } from "@agris/core";
 import { subrequestLimitFromBinding } from "@agris/invocation-budget";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-import type { GatewayEnv, SmokeGatewayEnv } from "./env.js";
+import { clientAdmissionKeyOf, marketAdmissionFromBindings } from "./admission.js";
+import type { GatewayEnv, MarketAdmissionEnv, SmokeGatewayEnv } from "./env.js";
 import {
   deploymentCacheFreshness,
   executeAgrisProxy,
@@ -13,7 +14,7 @@ import {
   type AgrisProxyRuntimeEnv,
 } from "./gateway.js";
 
-export type { GatewayEnv, LocalGatewayEnv, SmokeGatewayEnv } from "./env.js";
+export type { GatewayEnv, LocalGatewayEnv, MarketAdmissionEnv, SmokeGatewayEnv } from "./env.js";
 export {
   clientSchema,
   deploymentCacheFreshness,
@@ -29,13 +30,34 @@ export {
 } from "./gateway.js";
 export { gatewayPlugins } from "./plugins.js";
 
-type DeployedAgrisProxyEnv = GatewayEnv | SmokeGatewayEnv;
+type DeployedAgrisProxyEnv = (GatewayEnv | SmokeGatewayEnv) & MarketAdmissionEnv;
 
-/** The cache-enabled entrypoint: Workers Cache answers a repeated operation before it runs. */
+/**
+ * The cache-enabled entrypoint: Workers Cache answers a repeated operation before it runs. On a miss for a public
+ * caller, whose client key the cache key request carries in a header (Workers Cache keys on the props, not on it), the
+ * execution admits its market calls through the Worker's `GatewayAdmission` buckets when `MARKET_CLIENT_LIMIT_*` is
+ * set.
+ */
 export class CachedAgrisProxy extends WorkerEntrypoint<DeployedAgrisProxyEnv, AgrisProxyExecutionProps> {
-  public async fetch(_request: Request): Promise<Response> {
-    return executeAgrisProxy(deployedRuntime(this.env), this.ctx.props);
+  public async fetch(request: Request): Promise<Response> {
+    return executeCachedAgrisProxy(this.env, this.ctx.props, request);
   }
+}
+
+/** What `CachedAgrisProxy` runs on a cache miss: `props`, admitted under the client key `cacheKey` carries. */
+export function executeCachedAgrisProxy(
+  env: DeployedAgrisProxyEnv,
+  props: AgrisProxyExecutionProps,
+  cacheKey: Request,
+): Promise<Response> {
+  const runtime = { ...deployedRuntime(env), ...marketAdmissionOf(env) };
+  return executeAgrisProxy(runtime, props, clientAdmissionKeyOf(cacheKey));
+}
+
+/** The market admission a deployment's bindings set, as runtime fields; none when it sets no exact limit. */
+function marketAdmissionOf(env: MarketAdmissionEnv): Pick<AgrisProxyRuntimeEnv, "marketAdmission"> {
+  const marketAdmission = marketAdmissionFromBindings(env, env.ADMISSION);
+  return marketAdmission === undefined ? {} : { marketAdmission };
 }
 
 export const agrisProxyWorker = {

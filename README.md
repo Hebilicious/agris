@@ -195,16 +195,18 @@ A misspelt setting or a value Agris cannot use stops the deploy before anything 
 | `CACHE_QUERY_SEARCH_ITEMS_MAX_AGE_SECONDS`                       | `31536000` |       | `0`      |
 | `CACHE_QUERY_SEARCH_ITEMS_STALE_WHILE_REVALIDATE_SECONDS`        | `86400`    |       | `0`      |
 
-**Rate limits.** Exact limits on every request to the gateway, `/health` and preflights included, kept by a Durable Object token bucket per client (an IPv6 address by its /64) and one for the whole deployment, behind a per-location Workers rate-limit binding at the same rate as a cheap first line. `0` requests sets neither. A self-hosted gateway limits no client by default; the Pearl Abyss limits below protect the upstream either way. See [docs/deploy.md](docs/deploy.md#rate-limits).
+**Rate limits.** Workers rate-limit bindings on every request to the gateway, `/health` and preflights included, per client (an IPv6 address by its /64) and for the whole deployment, counted per Cloudflare location with no round trip. The exact market limit is a Durable Object token bucket per client, asked only when a query is about to read the Central Market: a cache hit or a catalog-only query never reaches it. `0` requests turns each one off. A self-hosted gateway limits no client by default; the Pearl Abyss limits below protect the upstream either way. See [docs/deploy.md](docs/deploy.md#rate-limits).
 
-| Variable                           | Default | Demo    | Turn off |
-| ---------------------------------- | ------- | ------- | -------- |
-| `CLIENT_RATE_LIMIT_REQUESTS`       | `0`     | `10`    | `0`      |
-| `CLIENT_RATE_LIMIT_PERIOD_SECONDS` | `60`    | `60`    |          |
-| `CLIENT_RATE_LIMIT_NAMESPACE_ID`   | `42010` | `42021` |          |
-| `GLOBAL_RATE_LIMIT_REQUESTS`       | `0`     | `120`   | `0`      |
-| `GLOBAL_RATE_LIMIT_PERIOD_SECONDS` | `60`    | `60`    |          |
-| `GLOBAL_RATE_LIMIT_NAMESPACE_ID`   | `42011` | `42022` |          |
+| Variable                             | Default | Demo    | Turn off |
+| ------------------------------------ | ------- | ------- | -------- |
+| `CLIENT_RATE_LIMIT_REQUESTS`         | `0`     | `10`    | `0`      |
+| `CLIENT_RATE_LIMIT_PERIOD_SECONDS`   | `60`    | `60`    |          |
+| `CLIENT_RATE_LIMIT_NAMESPACE_ID`     | `42010` | `42021` |          |
+| `GLOBAL_RATE_LIMIT_REQUESTS`         | `0`     | `120`   | `0`      |
+| `GLOBAL_RATE_LIMIT_PERIOD_SECONDS`   | `60`    | `60`    |          |
+| `GLOBAL_RATE_LIMIT_NAMESPACE_ID`     | `42011` | `42022` |          |
+| `MARKET_CLIENT_LIMIT_REQUESTS`       | `0`     | `10`    | `0`      |
+| `MARKET_CLIENT_LIMIT_PERIOD_SECONDS` | `60`    | `60`    |          |
 
 **Upstream (Pearl Abyss).** One coordinator per Pearl Abyss host, placed next to it, sends each distinct call once. `PA_MAX_CONCURRENT_REQUESTS` applies to each host; the `PA_RATE_LIMIT_*` rate is one allowance for the whole deployment, shared by every host.
 

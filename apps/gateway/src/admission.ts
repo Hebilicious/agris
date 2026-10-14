@@ -1,43 +1,45 @@
 /**
- * The public gateway's exact admission: token buckets stored by the gateway's own `GatewayAdmission` Durable Object, one
- * object per client and one for the whole deployment.
+ * The exact market admission: one token bucket per client, stored by a `GatewayAdmission` Durable Object, which an
+ * execution asks once before its first market subgraph call.
  *
  * Cloudflare's rate-limit bindings count per location and converge after the fact, so a parallel burst, or a client
  * whose requests land on several locations, outruns them. A Durable Object is one instance worldwide that handles its
- * requests one at a time, so its bucket admits exactly what its rate allows, however the requests arrive.
+ * requests one at a time, so its bucket admits exactly what its rate allows, however the requests arrive. It costs a
+ * round trip and a storage write, so only work that would reach Pearl Abyss pays it: a cache hit, a catalog-only query,
+ * a health check or a preflight never asks.
  *
  * This module imports nothing, so Node loads it by its subpath (`@agris/gateway-worker/admission`) without a TypeScript
  * loader, and the deploy settings read the variable names from here.
  */
 
-/** The gateway's runtime admission variables. Absent or `0` requests sets no exact limit for that scope. */
-export const ADMISSION_SETTING = Object.freeze({
-  clientRequests: "ADMISSION_CLIENT_REQUESTS",
-  clientPeriod: "ADMISSION_CLIENT_PERIOD_SECONDS",
-  globalRequests: "ADMISSION_GLOBAL_REQUESTS",
-  globalPeriod: "ADMISSION_GLOBAL_PERIOD_SECONDS",
+/** The runtime variables of the exact market admission. Absent or `0` requests sets none. */
+export const MARKET_ADMISSION_SETTING = Object.freeze({
+  requests: "MARKET_CLIENT_LIMIT_REQUESTS",
+  period: "MARKET_CLIENT_LIMIT_PERIOD_SECONDS",
 });
 
-/** The period of an exact limit whose `*_PERIOD_SECONDS` is unset. */
-export const DEFAULT_ADMISSION_PERIOD_SECONDS = 60;
+/** The period of the exact market admission when `MARKET_CLIENT_LIMIT_PERIOD_SECONDS` is unset. */
+export const DEFAULT_MARKET_ADMISSION_PERIOD_SECONDS = 60;
 
 /** How long a caller refused because admission could not answer should wait before trying again. */
 export const ADMISSION_UNAVAILABLE_RETRY_SECONDS = 5;
 
-const ADMISSION_PREFIX = "ADMISSION_";
-const KNOWN_ADMISSION_SETTINGS: ReadonlySet<string> = new Set(Object.values(ADMISSION_SETTING));
+/**
+ * The header that carries a public caller's client key from the public gateway to the execution that may call the
+ * market. It rides on the cache key request, never in `ctx.props`, because Workers Cache keys on an invocation's props
+ * and ignores headers like this one: the stored answers stay shared by every client. Only the public gateway builds that
+ * request, so a caller cannot set it.
+ */
+export const CLIENT_ADMISSION_KEY_HEADER = "x-agris-admission-client";
+
+const MARKET_ADMISSION_PREFIX = "MARKET_CLIENT_LIMIT_";
+const KNOWN_MARKET_ADMISSION_SETTINGS: ReadonlySet<string> = new Set(Object.values(MARKET_ADMISSION_SETTING));
 const ADMISSION_URL = "https://gateway-admission.internal/admit";
 
 /** An exact limit: at most `limit` requests in any `periodSeconds`, refilling evenly, with a burst of `limit`. */
 export interface AdmissionRate {
   readonly limit: number;
   readonly periodSeconds: number;
-}
-
-/** A deployment's exact limits; `null` sets none for that scope. */
-export interface AdmissionLimits {
-  readonly client: AdmissionRate | null;
-  readonly global: AdmissionRate | null;
 }
 
 /** One bucket's answer: admitted, or refused until a token is back in `retryAfterSeconds`. */
@@ -50,33 +52,54 @@ export interface AdmissionNamespacePort {
   getByName(name: string): { fetch(request: Request): Promise<Response> };
 }
 
+/** What an execution needs to admit its market calls: the namespace that keeps the buckets and the rate they hold. */
+export interface MarketAdmission {
+  readonly namespace: AdmissionNamespacePort;
+  readonly rate: AdmissionRate;
+}
+
 /**
- * BOUNDARY: A deployment's exact limits, from its `ADMISSION_*` variables. Each count and period is a positive whole
- * number as text or a JSON number; a count of `0` turns that scope off. Anything else, and any `ADMISSION_` variable
- * that is no setting, throws, so a bad configuration fails instead of admitting everyone.
+ * BOUNDARY: A deployment's exact market admission rate, from its `MARKET_CLIENT_LIMIT_*` variables, or `null` when it
+ * sets none. The count and the period are whole numbers as text or JSON numbers; a count of `0` turns it off. Anything
+ * else, and any `MARKET_CLIENT_LIMIT_` variable that is no setting, throws, so a bad configuration fails instead of
+ * admitting everyone.
  */
-export function admissionLimitsFromBindings(bindings: object): AdmissionLimits {
+export function marketAdmissionRateFromBindings(bindings: object): AdmissionRate | null {
   for (const name of Object.keys(bindings)) {
-    if (name.startsWith(ADMISSION_PREFIX) && !KNOWN_ADMISSION_SETTINGS.has(name)) {
-      throw new TypeError(`${name} is not an admission setting`);
+    if (name.startsWith(MARKET_ADMISSION_PREFIX) && !KNOWN_MARKET_ADMISSION_SETTINGS.has(name)) {
+      throw new TypeError(`${name} is not a market admission setting`);
     }
   }
   const values = new Map<string, unknown>(Object.entries(bindings));
-  return {
-    client: rateOf(values, ADMISSION_SETTING.clientRequests, ADMISSION_SETTING.clientPeriod),
-    global: rateOf(values, ADMISSION_SETTING.globalRequests, ADMISSION_SETTING.globalPeriod),
-  };
-}
-
-function rateOf(values: ReadonlyMap<string, unknown>, requests: string, period: string): AdmissionRate | null {
-  const limit = wholeNumber(values.get(requests), requests);
-  const periodSeconds = wholeNumber(values.get(period), period);
-  if (periodSeconds === 0) throw new TypeError(`${period} must be a positive whole number of seconds`);
+  const limit = wholeNumber(values.get(MARKET_ADMISSION_SETTING.requests), MARKET_ADMISSION_SETTING.requests);
+  const periodSeconds = wholeNumber(values.get(MARKET_ADMISSION_SETTING.period), MARKET_ADMISSION_SETTING.period);
+  if (periodSeconds === 0) {
+    throw new TypeError(`${MARKET_ADMISSION_SETTING.period} must be a positive whole number of seconds`);
+  }
   if (limit === undefined || limit === 0) return null;
-  return { limit, periodSeconds: periodSeconds ?? DEFAULT_ADMISSION_PERIOD_SECONDS };
+  return { limit, periodSeconds: periodSeconds ?? DEFAULT_MARKET_ADMISSION_PERIOD_SECONDS };
 }
 
-/* BOUNDARY: One `ADMISSION_*` binding: absent, or a whole number as text or a JSON number. */
+/**
+ * The market admission an execution runs with: the deployment's rate and the namespace that keeps its buckets, or
+ * `undefined` when the deployment sets no rate. A rate without a namespace throws, so a deployment that asked for an
+ * exact limit never runs without one.
+ */
+export function marketAdmissionFromBindings(
+  bindings: object,
+  namespace: AdmissionNamespacePort | undefined,
+): MarketAdmission | undefined {
+  const rate = marketAdmissionRateFromBindings(bindings);
+  if (rate === null) return undefined;
+  if (namespace === undefined) {
+    throw new TypeError(
+      `${MARKET_ADMISSION_SETTING.requests} is set, but the Worker binds no ADMISSION Durable Object namespace`,
+    );
+  }
+  return { namespace, rate };
+}
+
+/* BOUNDARY: One `MARKET_CLIENT_LIMIT_*` binding: absent, or a whole number as text or a JSON number. */
 function wholeNumber(value: unknown, name: string): number | undefined {
   if (value === undefined) return undefined;
   const number = typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value) ? Number(value) : value;
@@ -115,9 +138,23 @@ function ipv6Network(address: string): string | undefined {
   return network.map((group) => group.replace(/^0+(?=.)/u, "")).join(":");
 }
 
-/** The name of the `GatewayAdmission` object that keeps one scope's bucket. */
-export function admissionObjectName(scope: "client" | "global", clientKey: string): string {
-  return scope === "global" ? "global" : `client:${clientKey}`;
+/** The cache key request with the client key the execution behind it admits its market calls under. */
+export function withClientAdmissionKey(request: Request, clientKey: string | null): Request {
+  if (clientKey === null) return request;
+  const keyed = new Request(request);
+  keyed.headers.set(CLIENT_ADMISSION_KEY_HEADER, clientKey);
+  return keyed;
+}
+
+/** The client key a cache key request carries, or `null` when a private caller sent it. */
+export function clientAdmissionKeyOf(request: Request): string | null {
+  const key = request.headers.get(CLIENT_ADMISSION_KEY_HEADER);
+  return key === null || key === "" ? null : key;
+}
+
+/** The name of the `GatewayAdmission` object that keeps one client's bucket. */
+export function admissionObjectName(clientKey: string): string {
+  return `client:${clientKey}`;
 }
 
 /** Ask one `GatewayAdmission` object to admit a request at `rate`. Any failure, or an unexpected answer, throws. */
@@ -152,7 +189,7 @@ function admissionDecisionOf(body: unknown): AdmissionDecision {
 }
 
 /*
- * BOUNDARY: The bucket an object stored, or `undefined` when it has stored none. Anything else throws, so the gateway
+ * BOUNDARY: The bucket an object stored, or `undefined` when it has stored none. Anything else throws, so the execution
  * refuses the request as it does when an object cannot answer, rather than guessing at a full bucket.
  */
 function admissionBucketStateOf(value: unknown): AdmissionBucketState | undefined {
@@ -170,7 +207,7 @@ function admissionBucketStateOf(value: unknown): AdmissionBucketState | undefine
   throw new TypeError("A GatewayAdmission object stored no readable bucket");
 }
 
-/* BOUNDARY: The rate a gateway sent to its `GatewayAdmission` object, checked before the bucket uses it. */
+/* BOUNDARY: The rate an execution sent to its `GatewayAdmission` object, checked before the bucket uses it. */
 function admissionRateOf(body: unknown): AdmissionRate | undefined {
   if (typeof body !== "object" || body === null || !("limit" in body) || !("periodSeconds" in body)) return undefined;
   const { limit, periodSeconds } = body;
@@ -199,7 +236,7 @@ export interface AdmissionStore {
 const BUCKET_KEY = "bucket";
 
 /**
- * One scope's token bucket, which a `GatewayAdmission` object keeps in its own storage. It holds up to `limit` tokens,
+ * One client's token bucket, which a `GatewayAdmission` object keeps in its own storage. It holds up to `limit` tokens,
  * refills `limit` of them evenly over `periodSeconds`, and spends one per admitted request.
  *
  * Every decision reads the stored bucket and writes it back before answering, so an object the runtime evicts while it
@@ -229,10 +266,12 @@ export class AdmissionBucket {
     return { admitted: false, retryAfterSeconds: Math.max(1, Math.ceil(untilNextTokenMs / 1000)) };
   }
 
-  /** Answer one admission request a gateway sent with `admitThrough`. */
+  /** Answer one admission request an execution sent with `admitThrough`. */
   public async answer(request: Request, nowMs: number): Promise<Response> {
     const rate = admissionRateOf(await request.json().catch(() => undefined));
-    if (rate === undefined) return Response.json({ error: "An admission request carries a rate" }, { status: 400 });
-    return Response.json(this.admit(rate, nowMs));
+    const headers = { "Cache-Control": "no-store" };
+    if (rate === undefined)
+      return Response.json({ error: "An admission request carries a rate" }, { status: 400, headers });
+    return Response.json(this.admit(rate, nowMs), { headers });
   }
 }
