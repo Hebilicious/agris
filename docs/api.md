@@ -145,7 +145,7 @@ The gateway's cache settings are plain-text variables, one per value, and every 
 
 Every number is a whole number of seconds, zero or more, and every never-stored coordinate a field of the client schema. The gateway refuses any other value, and any `CACHE_` variable it does not know, with an error instead of falling back to the defaults.
 
-The shared demo sets `CACHE_MINIMUM_SECONDS=600`, so every window in this table is at least 10 minutes there. Its market Worker also runs at most 2 Pearl Abyss requests at once and at most 20 per minute.
+The shared demo sets `CACHE_MINIMUM_SECONDS=600`, so every window in this table is at least 10 minutes there. Its market Worker also runs at most 2 Pearl Abyss requests at once per Pearl Abyss host, and at most 20 per minute across every host.
 
 Headers that describe caching:
 

@@ -34,7 +34,7 @@ export interface DeploymentFacts {
   readonly freshnessFloorSeconds: number;
   /** `PA_MAX_CONCURRENT_REQUESTS` on the market Worker: distinct Pearl Abyss requests at once, per host. */
   readonly pearlAbyssConcurrency: number;
-  /** `PA_RATE_LIMITER` on the market Worker: the burst backstop on Pearl Abyss calls. */
+  /** `PA_RATE_LIMITER` on the market Worker: the burst backstop on Pearl Abyss calls, for every host together. */
   readonly pearlAbyssRateLimit: Rate;
   /** `SUBREQUEST_LIMIT`: subrequests per invocation. */
   readonly subrequestLimit: number;
@@ -150,7 +150,11 @@ export function limitSettingsOf(selfHosted: DeploymentSettings, demo: Deployment
   rate(
     (settings) => settings.pearlAbyssRateLimit,
     SELF_HOSTED_DEFAULTS.pearlAbyssRateLimit.period,
-    { variable: DEPLOY_SETTING.pearlAbyssRateLimitRequests, label: "Pearl Abyss calls", unit: "calls" },
+    {
+      variable: DEPLOY_SETTING.pearlAbyssRateLimitRequests,
+      label: "Pearl Abyss calls, all servers together",
+      unit: "calls",
+    },
     { variable: DEPLOY_SETTING.pearlAbyssRateLimitPeriod, label: "Period of the Pearl Abyss limit" },
   );
   rows.push({

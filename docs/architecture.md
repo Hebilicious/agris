@@ -110,12 +110,15 @@ Summary reads are batched: every `marketSummary` at the same query path, and eve
 Every upstream call goes through the `PearlAbyssCoordinator` Durable Object, one instance per upstream host, created next to that host's server: each region's coordinator is named `<hint>:<host>` and created with that Durable Object location hint (`PEARL_ABYSS_COORDINATOR_LOCATIONS` in `apps/market/src/market.ts`; [deploy.md](deploy.md#upstream-pearl-abyss) explains how the hints were measured). Inside it:
 
 - identical requests that are pending at the same time share one fetch;
-- each distinct request first asks the rate-limit binding (default 100 per 10 seconds), a burst backstop, for a permit before it waits for a slot; a denied or failed permit, or one that has not come within 5 seconds, means no fetch, and a deployment without the `PA_RATE_LIMITER` binding sets no rate;
+- each distinct request first asks for a permit from the deployment's rate allowance (default 100 per 10 seconds), before it waits for a slot; a denied or failed permit, or one that has not come within 5 seconds, means no fetch, and a deployment without the `PA_RATE_LIMITER` binding sets no rate;
+- after a refused permit, the coordinator refuses distinct requests itself for one second without asking the allowance, so a flood of reads is not also a flood of permit requests; it never admits one on its own;
 - at most `PA_MAX_CONCURRENT_REQUESTS` (default 6) distinct requests run at once, and up to 100 more wait in FIFO order; one past that fails at once as `upstream/queue-full` without reaching Pearl Abyss; `0` or no setting sets no concurrency limit of its own, and the coordinator then runs at most 1,000 at once, so the work it holds stays bounded;
 - pending requests are keyed by the SHA-256 of their URL and body, so a waiting entry holds a digest, and only the first caller of a key leaves its body with the coordinator;
 - a caller that gives up stops only its own wait; the request leaves the queue, or its upstream call is cancelled, once every caller sharing it has given up. The Workers run with the `enable_request_signal` compatibility flag, without which the coordinator would never hear that a caller left. A request every caller left still counts against the queue until its work has stopped;
 - each distinct request has 30 seconds from its arrival at the coordinator, its permit and its wait for a slot included; past that it leaves the queue, or its upstream call is cancelled, and it fails as timed out. It is not retried;
 - upstream responses are read with a byte ceiling and rejected if their shape is unexpected.
+
+The rate allowance is the same for the whole deployment, not per host. Workers rate limits count per Cloudflare location and the coordinators run in four, so no host coordinator consults `PA_RATE_LIMITER` itself: one more object of the same class, `enam:pearl-abyss-allowance` (`PEARL_ABYSS_ALLOWANCE_ADDRESS`), consults it from one location and answers every coordinator's permit request. A distinct request pays one round trip to that object; a request shared with one in flight, or refused in the second after a refused permit, pays none.
 
 The coordinator holds no queue on disk and no results after they settle; it is not a cache. If it restarts, in-flight callers fail and the gateway's stale cache covers them.
 

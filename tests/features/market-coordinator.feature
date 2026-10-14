@@ -1,6 +1,13 @@
 @vitest
 Feature: Pearl Abyss coordinators
-  The market Worker's coordinators send each distinct Pearl Abyss request once, and bound the work that waits.
+  The market Worker's coordinators send each distinct Pearl Abyss request once, bound the work that waits, and hold one
+  rate allowance for the whole deployment.
+
+  @scenario:deployment-wide-rate-allowance @provenance:minimal @i0
+  Scenario: The Pearl Abyss rate allowance is shared by every upstream host
+    Given a deployment whose Pearl Abyss rate limit admits 1 request per period, counted per Cloudflare location
+    When the EU and NA coordinators each receive a distinct Pearl Abyss request
+    Then 1 request reaches Pearl Abyss and the other fails as rate limited
 
   @scenario:rate-limit-before-queue @provenance:minimal @i0
   Scenario: A distinct request the rate limit refuses never waits for an active slot
@@ -38,10 +45,16 @@ Feature: Pearl Abyss coordinators
     Then both fail as timed out, the first's upstream call is cancelled, and the second never reaches Pearl Abyss
 
   @scenario:stalled-permit-refuses @provenance:minimal @i0
-  Scenario: A permit the rate limiter does not answer within 5 seconds refuses the request
-    Given a coordinator whose Pearl Abyss rate limiter never answers
+  Scenario: A permit the deployment's allowance does not answer within 5 seconds refuses the request
+    Given a deployment whose Pearl Abyss rate allowance never answers
     When a distinct request waits 5 seconds for its permit
     Then it fails as rate limited without reaching Pearl Abyss
+
+  @scenario:abandoned-permit @provenance:minimal @i0
+  Scenario: A permit request is abandoned once every caller of its distinct request has given up
+    Given a deployment whose Pearl Abyss rate allowance never answers
+    When the only caller of a distinct request gives up while it waits for its permit
+    Then the permit request is abandoned too
 
   @scenario:abandoned-work-counts @provenance:minimal @i0
   Scenario: Work every caller has given up on still counts against the queue until it settles
@@ -54,3 +67,9 @@ Feature: Pearl Abyss coordinators
     Given a coordinator whose PA_MAX_CONCURRENT_REQUESTS is 0
     When 1101 distinct requests arrive while Pearl Abyss holds every answer
     Then 1000 reach Pearl Abyss and one fails as queue full
+
+  @scenario:local-refusal-window @provenance:minimal @i0
+  Scenario: After its permit is refused, a coordinator refuses distinct requests itself for one second
+    Given a deployment whose Pearl Abyss rate allowance refuses every permit
+    When three distinct requests arrive, the third one second after the first was refused
+    Then all three fail as rate limited and only the first and the third asked the allowance
