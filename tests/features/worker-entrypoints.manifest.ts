@@ -243,37 +243,54 @@ const steps: readonly StepDefinition<WorkerEntrypointsWorld>[] = [
     assert.deepEqual(basePrices, [377_000, 377_000]);
   }),
   step(
-    "the real Agris Proxy queries an EU and an NA market item through a market Worker whose PA_RATE_LIMITER admits {int} request per period",
+    "the real Agris Proxy queries an EU market item and then an NA market item through a market Worker whose PA_RATE_LIMITER admits {int} request per period",
     integerStepArgument,
     async (world, _limit) => {
       await resetPearlAbyssObservation();
-      const gatewayEnv: AgrisProxyRuntimeEnv = {
-        MARKET: serviceBindingPort(rateLimitedMarket()),
-        CATALOG: serviceBindingPort(env.CATALOG),
-      };
-      const cachedAgrisProxy = createCachedAgrisProxyExport(new Map(), gatewayEnv);
-      const responses = await Promise.all([
-        executeAgrisProxyEntrypoint(gatewayEnv, cachedAgrisProxy, gatewayRequest("10006", "EU")),
-        executeAgrisProxyEntrypoint(gatewayEnv, cachedAgrisProxy, gatewayRequest("10009", "NA")),
+      world.gatewayResponses = await rateLimitedMarketReads(world, [
+        ["10006", "EU"],
+        ["10009", "NA"],
       ]);
-      world.gatewayResponses = responses;
-      world.gatewayBodies = await Promise.all(responses.map((response) => response.clone().json()));
     },
   ),
   step(
-    "{int} Pearl Abyss request was sent and only one of the market items carries its Pearl Abyss summary",
+    "{int} Pearl Abyss requests were sent and both market items carry their Pearl Abyss summary",
     integerStepArgument,
     async (world, sent) => {
       assert.equal((await readPearlAbyssObservation()).total, sent);
-      const summarized = (world.gatewayBodies ?? []).filter((body) => {
-        const data = requiredRecord(body).data;
-        if (data === null || data === undefined) return false;
-        const market = requiredRecord(data).market;
-        if (market === null || market === undefined) return false;
-        const items = requiredRecord(market).items;
-        return Array.isArray(items) && items.some((item) => requiredRecord(item).basePrice === 377_000);
-      });
-      assert.equal(summarized.length, 1, JSON.stringify(world.gatewayBodies));
+      assert.deepEqual(
+        world.gatewayResponses?.map((response) => response.status),
+        [200, 200],
+        JSON.stringify(world.gatewayBodies),
+      );
+      assert.deepEqual(
+        (world.gatewayBodies ?? []).map((body) => marketItemBasePrice(body)),
+        [377_000, 377_000],
+      );
+    },
+  ),
+  step(
+    "the real Agris Proxy queries two ASIA market items, one after the other, through a market Worker whose PA_RATE_LIMITER admits {int} request per period",
+    integerStepArgument,
+    async (world, _limit) => {
+      await resetPearlAbyssObservation();
+      world.gatewayResponses = await rateLimitedMarketReads(world, [
+        ["10006", "ASIA"],
+        ["10009", "ASIA"],
+      ]);
+    },
+  ),
+  step(
+    "{int} Pearl Abyss request was sent and the second answer is an uncached HTTP 429 with Retry-After",
+    integerStepArgument,
+    async (world, sent) => {
+      assert.equal((await readPearlAbyssObservation()).total, sent);
+      const [first, second] = world.gatewayResponses ?? [];
+      assert.equal(first?.status, 200, JSON.stringify(world.gatewayBodies));
+      assert.equal(marketItemBasePrice(world.gatewayBodies?.[0]), 377_000);
+      assert.equal(second?.status, 429, JSON.stringify(world.gatewayBodies));
+      assert.equal(second.headers.get("Cache-Control"), "no-store");
+      assert.match(second.headers.get("Retry-After") ?? "", /^[1-9][0-9]*$/u);
     },
   ),
   step(
@@ -525,6 +542,34 @@ async function readPearlAbyssObservation(): Promise<{ readonly distinct: number;
 
 interface TestBinding {
   fetch(input: string, init?: RequestInit): Promise<Response>;
+}
+
+/** Market item reads sent one after the other through the rate-limited market Worker, each from a cold cache. */
+async function rateLimitedMarketReads(
+  world: WorkerEntrypointsWorld,
+  reads: readonly (readonly [itemId: string, region: string])[],
+): Promise<readonly Response[]> {
+  const gatewayEnv: AgrisProxyRuntimeEnv = {
+    MARKET: serviceBindingPort(rateLimitedMarket()),
+    CATALOG: serviceBindingPort(env.CATALOG),
+  };
+  const cachedAgrisProxy = createCachedAgrisProxyExport(new Map(), gatewayEnv);
+  const responses: Response[] = [];
+  for (const [itemId, region] of reads) {
+    responses.push(await executeAgrisProxyEntrypoint(gatewayEnv, cachedAgrisProxy, gatewayRequest(itemId, region)));
+  }
+  world.gatewayBodies = await Promise.all(responses.map((response) => response.clone().json()));
+  return responses;
+}
+
+/** The base price of the first market item in a gateway answer, or `undefined` when it carries none. */
+function marketItemBasePrice(body: unknown): unknown {
+  const data = requiredRecord(body).data;
+  if (data === null || data === undefined) return undefined;
+  const market = requiredRecord(data).market;
+  if (market === null || market === undefined) return undefined;
+  const items = requiredRecord(market).items;
+  return Array.isArray(items) && items.length > 0 ? requiredRecord(items[0]).basePrice : undefined;
 }
 
 function rateLimitedMarket(): unknown {

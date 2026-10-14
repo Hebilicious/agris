@@ -74,8 +74,8 @@ export interface DeploymentSettings {
    */
   readonly marketClientLimit: ExactRate | null;
   /**
-   * `PA_RATE_LIMITER` on the market Worker, the burst backstop on Pearl Abyss calls for the whole deployment: one
-   * coordinator consults it for every host, from one location. `null` binds none.
+   * `PA_RATE_LIMITER` on the market Worker, the burst backstop on Pearl Abyss calls per region: each region's
+   * coordinator consults it for its own host, so the deployment's total is twelve times the limit. `null` binds none.
    */
   readonly pearlAbyssRateLimit: RateLimitSetting | null;
   /** `PA_MAX_CONCURRENT_REQUESTS`: distinct Pearl Abyss requests at once, per host; `0` sets no limit of its own. */
@@ -141,7 +141,7 @@ const DEMO_MARKET_CLIENT_LIMIT: ExactRate = { limit: 10, periodSeconds: 60 };
 /**
  * The shared demo protects Pearl Abyss first: ten requests a minute per visitor and 120 for everyone at each Cloudflare
  * location, ten market executions a minute per visitor counted exactly, two Pearl Abyss calls at a time per host and
- * twenty a minute in all, a ten-minute cache floor, and sparse telemetry.
+ * twenty a minute per region (240 across the twelve), a ten-minute cache floor, and sparse telemetry.
  */
 export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSettings>({
   names: workerNames(DEMO_STAGE),
@@ -168,10 +168,10 @@ export const DEMO_SETTINGS: DeploymentSettings = Object.freeze<DeploymentSetting
 /**
  * A self-hosted deployment with nothing set limits each client to sixty requests a minute at each Cloudflare location,
  * and sets no limit for all clients together and no exact market limit; it makes six Pearl Abyss calls at a time per
- * host with a burst backstop of a hundred per ten seconds in all, fifty subrequests per invocation, and runs the default
- * cache. Its gateway answers anyone on `workers.dev` from the moment it deploys, so the client limit is on unless the
- * deployer sets `CLIENT_RATE_LIMIT_REQUESTS=0`; `MARKET_CLIENT_LIMIT_REQUESTS` adds an exact limit on each client's
- * market executions, at the cost of a Durable Object request for each of them.
+ * host with a burst backstop of a hundred per ten seconds per region, fifty subrequests per invocation, and runs the
+ * default cache. Its gateway answers anyone on `workers.dev` from the moment it deploys, so the client limit is on
+ * unless the deployer sets `CLIENT_RATE_LIMIT_REQUESTS=0`; `MARKET_CLIENT_LIMIT_REQUESTS` adds an exact limit on each
+ * client's market executions, at the cost of a Durable Object request for each of them.
  */
 export const SELF_HOSTED_DEFAULTS = Object.freeze({
   clientRateLimit: { limit: 60, period: 60, namespaceId: "42010" },

@@ -14,8 +14,8 @@ export interface MarketEnv {
   /** This Worker's own `PearlAbyssCoordinator` Durable Object class. */
   readonly PA_COORDINATOR: DurableObjectNamespace<PearlAbyssCoordinator>;
   /**
-   * Burst backstop for Pearl Abyss calls to every host together, which one coordinator consults; absent sets no rate
-   * limit.
+   * Burst backstop for Pearl Abyss calls, counted per upstream host: each region's coordinator consults it for its own
+   * host. Absent sets no rate limit.
    */
   readonly PA_RATE_LIMITER?: RateLimit;
   /**

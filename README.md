@@ -208,7 +208,7 @@ A misspelt setting or a value Agris cannot use stops the deploy before anything 
 | `MARKET_CLIENT_LIMIT_REQUESTS`       | `0`     | `10`    | `0`      |
 | `MARKET_CLIENT_LIMIT_PERIOD_SECONDS` | `60`    | `60`    |          |
 
-**Upstream (Pearl Abyss).** One coordinator per Pearl Abyss host, placed next to it, sends each distinct call once. `PA_MAX_CONCURRENT_REQUESTS` applies to each host; the `PA_RATE_LIMIT_*` rate is one allowance for the whole deployment, shared by every host.
+**Upstream (Pearl Abyss).** One coordinator per Pearl Abyss host, placed next to it, sends each distinct call once. `PA_MAX_CONCURRENT_REQUESTS` applies to each host, and so does the `PA_RATE_LIMIT_*` rate: each of the 12 Pearl Abyss regions is its own server with its own limit, so the default 100 per 10 seconds is 1,200 per 10 seconds across all 12, and the demo's 20 a minute is 240 a minute.
 
 | Variable                       | Default | Demo    | Turn off |
 | ------------------------------ | ------- | ------- | -------- |

@@ -1,12 +1,20 @@
 @vitest
 Feature: Pearl Abyss coordinators
-  The market Worker's coordinators send each distinct Pearl Abyss request once, bound the work that waits, and hold one
-  rate allowance for the whole deployment.
+  The market Worker's coordinators send each distinct Pearl Abyss request once, bound the work that waits, and hold
+  each Pearl Abyss region to its own rate limit.
 
-  @scenario:deployment-wide-rate-allowance @provenance:minimal @i0
-  Scenario: The Pearl Abyss rate allowance is shared by every upstream host
-    Given a deployment whose Pearl Abyss rate limit admits 1 request per period, counted per Cloudflare location
-    When the EU and NA coordinators each receive a distinct Pearl Abyss request
+  @scenario:region-rate-limits-are-separate @provenance:minimal @i0
+  Scenario: A region that has spent its Pearl Abyss rate limit does not throttle another region
+    Given a deployment whose Pearl Abyss rate limit admits 1 request per period per region, counted per Cloudflare location
+    When the EU coordinator spends its rate limit on a distinct Pearl Abyss request
+    And the NA and MENA coordinators each receive a distinct Pearl Abyss request
+    Then 3 requests reach Pearl Abyss and none fails as rate limited
+
+  @scenario:region-rate-limit-holds @provenance:minimal @i0
+  Scenario: A region beyond its own Pearl Abyss rate limit is refused
+    Given a deployment whose Pearl Abyss rate limit admits 1 request per period per region, counted per Cloudflare location
+    When the EU coordinator spends its rate limit on a distinct Pearl Abyss request
+    And the EU coordinator receives another distinct Pearl Abyss request
     Then 1 request reaches Pearl Abyss and the other fails as rate limited
 
   @scenario:rate-limit-before-queue @provenance:minimal @i0
@@ -45,16 +53,17 @@ Feature: Pearl Abyss coordinators
     Then both fail as timed out, the first's upstream call is cancelled, and the second never reaches Pearl Abyss
 
   @scenario:stalled-permit-refuses @provenance:minimal @i0
-  Scenario: A permit the deployment's allowance does not answer within 5 seconds refuses the request
-    Given a deployment whose Pearl Abyss rate allowance never answers
+  Scenario: A permit the rate limiter does not answer within 5 seconds refuses the request
+    Given a coordinator whose Pearl Abyss rate limiter answers only when released
     When a distinct request waits 5 seconds for its permit
     Then it fails as rate limited without reaching Pearl Abyss
 
   @scenario:abandoned-permit @provenance:minimal @i0
-  Scenario: A permit request is abandoned once every caller of its distinct request has given up
-    Given a deployment whose Pearl Abyss rate allowance never answers
+  Scenario: A distinct request whose every caller gives up while it waits for its permit is never sent
+    Given a coordinator whose Pearl Abyss rate limiter answers only when released
     When the only caller of a distinct request gives up while it waits for its permit
-    Then the permit request is abandoned too
+    And the rate limiter then admits it
+    Then it never reaches Pearl Abyss
 
   @scenario:abandoned-work-counts @provenance:minimal @i0
   Scenario: Work every caller has given up on still counts against the queue until it settles
@@ -67,9 +76,3 @@ Feature: Pearl Abyss coordinators
     Given a coordinator whose PA_MAX_CONCURRENT_REQUESTS is 0
     When 1101 distinct requests arrive while Pearl Abyss holds every answer
     Then 1000 reach Pearl Abyss and one fails as queue full
-
-  @scenario:local-refusal-window @provenance:minimal @i0
-  Scenario: After its permit is refused, a coordinator refuses distinct requests itself for one second
-    Given a deployment whose Pearl Abyss rate allowance refuses every permit
-    When three distinct requests arrive, the third one second after the first was refused
-    Then all three fail as rate limited and only the first and the third asked the allowance

@@ -41,7 +41,6 @@ import {
  */
 
 const marketSubgraph = createMarketSubgraph();
-const PEARL_ABYSS_RATE_LIMIT_KEY = "central-market-pearl-abyss";
 const PEARL_ABYSS_FAILURE_HEADER = "X-Pearl-Abyss-Failure";
 
 /**
@@ -51,17 +50,10 @@ const PEARL_ABYSS_FAILURE_HEADER = "X-Pearl-Abyss-Failure";
 export const PEARL_ABYSS_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * How long a coordinator waits for a permit from the deployment's allowance. A permit that has not come by then is a
- * refusal: a stalled allowance object or rate limiter cannot hold the coordinator's queue.
+ * How long a coordinator waits for a permit from its region's rate limit. A permit that has not come by then is a
+ * refusal: a stalled rate limiter cannot hold the coordinator's queue.
  */
 export const PEARL_ABYSS_PERMIT_TIMEOUT_MS = 5_000;
-
-/**
- * After the allowance refuses a permit, or does not answer in time, the coordinator refuses distinct requests itself
- * for this long without asking, so a flood of reads does not become a flood of permit requests. It only ever refuses
- * locally; every request it sends still had a permit from the allowance.
- */
-export const PEARL_ABYSS_LOCAL_REFUSAL_MS = 1_000;
 
 /**
  * Where each region's coordinator runs, so its calls to Pearl Abyss start next to the server that answers them.
@@ -103,35 +95,30 @@ export interface PearlAbyssCoordinatorAddress {
 }
 
 /**
- * The one coordinator object per deployment that also holds the Pearl Abyss rate allowance for every host.
+ * The `PA_RATE_LIMITER` key for one Pearl Abyss host. Each region is its own Pearl Abyss server, so each has its own
+ * rate limit: the key names the host, and regions whose coordinators share a Cloudflare location (EU, MENA and RU in
+ * `weur`, for one) still never share a count.
  *
- * Workers rate limits count per Cloudflare location, and the host coordinators run in four locations, so each one
- * consulting `PA_RATE_LIMITER` itself let every location spend the whole allowance. Every host coordinator instead asks
- * this one object, which alone consults the limiter from one location. It sits in eastern North America, the shortest
- * round trip to both the European and the western North American coordinators; the Asian coordinators pay the longest.
- * Its name is no Pearl Abyss host, so no region's coordinator shares it.
+ * Workers rate limits count per Cloudflare location. A region has exactly one coordinator, created at its location
+ * hint, and only that coordinator consults its key, so the per-location count is in effect one exact count per region.
  */
-export const PEARL_ABYSS_ALLOWANCE_ADDRESS: PearlAbyssCoordinatorAddress = {
-  name: "enam:pearl-abyss-allowance",
-  locationHint: "enam",
-};
-
-/** The request a coordinator sends the allowance object for one permit; no Pearl Abyss request has this URL. */
-const PEARL_ABYSS_ALLOWANCE_URL = "https://pearl-abyss-allowance.invalid/permit";
+export function pearlAbyssRateLimitKey(hostname: string): string {
+  return `central-market-pearl-abyss:${hostname}`;
+}
 
 /**
- * Distinct Pearl Abyss requests one coordinator lets wait, for the rate allowance or for an active slot, beyond the
+ * Distinct Pearl Abyss requests one coordinator lets wait, for a rate permit or for an active slot, beyond the
  * `PA_MAX_CONCURRENT_REQUESTS` it runs. Past it a distinct request fails at once as `upstream/queue-full`, so a flood
  * of distinct reads cannot hold the coordinator's memory: a hundred waiting request bodies are a few megabytes at most.
- * It is five minutes of the demo's allowance, more than a caller waits.
+ * It is five minutes of the demo's rate limit for one region, more than a caller waits.
  */
 export const MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS = 100;
 
 /**
  * The distinct Pearl Abyss requests one coordinator runs at once when `PA_MAX_CONCURRENT_REQUESTS` is `0` or unset,
  * which set no concurrency limit of their own. It keeps the work a coordinator holds finite, with up to
- * `MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS` more waiting, and is far above the 300 requests the default rate allowance
- * admits in 30 seconds.
+ * `MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS` more waiting, and is far above the 300 requests the default rate limit admits
+ * one region in 30 seconds.
  */
 export const UNLIMITED_CONCURRENT_PEARL_ABYSS_REQUESTS = 1_000;
 
@@ -204,97 +191,34 @@ const RUNTIME_CLOCK: PearlAbyssCoordinatorClock = {
   timeout: (milliseconds) => AbortSignal.timeout(milliseconds),
 };
 
-/** What a coordinator object needs from its host: the market Worker's bindings, and how to reach the allowance. */
+/** What a coordinator needs from its host: the market Worker's bindings, and how it reaches Pearl Abyss. */
 export interface PearlAbyssCoordinatorOptions {
   /** `PA_MAX_CONCURRENT_REQUESTS`, as `maximumConcurrentRequestsFromBinding` reads it. */
   readonly maximumConcurrentRequests: number;
-  /** The `PA_RATE_LIMITER` binding; absent limits no rate. Only the allowance object consults it. */
+  /** The `PA_RATE_LIMITER` binding, which the coordinator consults for its own host; absent limits no rate. */
   readonly limiter: PearlAbyssRateLimiter | undefined;
-  /** The deployment's allowance object, at `PEARL_ABYSS_ALLOWANCE_ADDRESS`. */
-  readonly allowance: () => PearlAbyssCoordinatorPort;
-  /** How the object reaches Pearl Abyss; the runtime's `fetch` unless a test supplies one. */
+  /** How the coordinator reaches Pearl Abyss; the runtime's `fetch` unless a test supplies one. */
   readonly upstream?: ((request: Request) => Promise<Response>) | undefined;
-  /** The time the object reads; the runtime's clock unless a test supplies one. */
+  /** The time the coordinator reads; the runtime's clock unless a test supplies one. */
   readonly clock?: PearlAbyssCoordinatorClock | undefined;
 }
 
-/**
- * The `PearlAbyssCoordinator` Durable Object's work, whichever host runs it. Each object coordinates the Pearl Abyss
- * host it is named for; the one at `PEARL_ABYSS_ALLOWANCE_ADDRESS` also answers every coordinator's permit requests,
- * so `PA_RATE_LIMITER` admits its rate once for the whole deployment, not once per location.
- */
-export class PearlAbyssCoordinatorObject implements PearlAbyssCoordinatorPort {
-  private readonly coordination: PearlAbyssCoordination;
-  private readonly limiter: PearlAbyssRateLimiter | undefined;
-  private readonly clock: PearlAbyssCoordinatorClock;
-
-  public constructor(options: PearlAbyssCoordinatorOptions) {
-    this.limiter = options.limiter;
-    this.clock = options.clock ?? RUNTIME_CLOCK;
-    this.coordination = new PearlAbyssCoordination({
-      maximumConcurrentRequests: options.maximumConcurrentRequests,
-      permit: options.limiter === undefined ? undefined : deploymentAllowance(options.allowance, this.clock),
-      upstream: options.upstream ?? ((request) => fetch(request)),
-      clock: this.clock,
-    });
-  }
-
-  public execute(request: Request): Promise<Response> {
-    return request.url === PEARL_ABYSS_ALLOWANCE_URL ? this.permit(request.signal) : this.coordination.execute(request);
-  }
-
-  /**
-   * One permit from the deployment's limiter: 204 when granted, 429 when refused, when the limiter fails, or when it
-   * has not answered within `PEARL_ABYSS_PERMIT_TIMEOUT_MS` or before the coordinator asking gave up.
-   */
-  private async permit(signal: AbortSignal): Promise<Response> {
-    if (this.limiter === undefined) return new Response(null, { status: 204 });
-    try {
-      const outcome = await untilAborted(
-        this.limiter.limit({ key: PEARL_ABYSS_RATE_LIMIT_KEY }),
-        AbortSignal.any([signal, this.clock.timeout(PEARL_ABYSS_PERMIT_TIMEOUT_MS)]),
-      );
-      return new Response(null, { status: outcome.success ? 204 : 429 });
-    } catch {
-      return new Response(null, { status: 429 });
-    }
-  }
-}
-
 /** Asks for one permit before a distinct request may wait for a slot; `false` refuses it. */
-type PearlAbyssPermit = (signal: AbortSignal) => Promise<boolean>;
+type PearlAbyssPermit = (request: DistinctPearlAbyssRequest, signal: AbortSignal) => Promise<boolean>;
 
 /**
- * Permits from the deployment's allowance object. A permit not granted within `PEARL_ABYSS_PERMIT_TIMEOUT_MS` is
- * refused, and after a refusal this coordinator refuses on its own for `PEARL_ABYSS_LOCAL_REFUSAL_MS` without asking.
+ * Permits from `PA_RATE_LIMITER`, counted for the request's own Pearl Abyss host (`pearlAbyssRateLimitKey`). The binding
+ * is local to the coordinator's Cloudflare location, so a permit costs no round trip. One not granted within
+ * `PEARL_ABYSS_PERMIT_TIMEOUT_MS`, or before every caller of its request gave up, is refused.
  */
-function deploymentAllowance(
-  allowance: () => PearlAbyssCoordinatorPort,
-  clock: PearlAbyssCoordinatorClock,
-): PearlAbyssPermit {
-  let refusingUntil = Number.NEGATIVE_INFINITY;
-  return async (signal) => {
-    if (clock.now() < refusingUntil) return false;
-    const deadline = AbortSignal.any([signal, clock.timeout(PEARL_ABYSS_PERMIT_TIMEOUT_MS)]);
-    const granted = await askAllowance(allowance(), deadline).catch(() => false);
-    // A permit abandoned because every caller gave up says nothing about the allowance.
-    if (!granted && !signal.aborted) refusingUntil = clock.now() + PEARL_ABYSS_LOCAL_REFUSAL_MS;
-    return granted;
+function regionRateLimit(limiter: PearlAbyssRateLimiter, clock: PearlAbyssCoordinatorClock): PearlAbyssPermit {
+  return async (request, signal) => {
+    const outcome = await untilAborted(
+      limiter.limit({ key: pearlAbyssRateLimitKey(new URL(request.url).hostname) }),
+      AbortSignal.any([signal, clock.timeout(PEARL_ABYSS_PERMIT_TIMEOUT_MS)]),
+    );
+    return outcome.success;
   };
-}
-
-async function askAllowance(allowance: PearlAbyssCoordinatorPort, signal: AbortSignal): Promise<boolean> {
-  const pending = allowance.execute(new Request(PEARL_ABYSS_ALLOWANCE_URL, { method: "POST", signal }));
-  // An answer that arrives after the permit was given up on is still released.
-  void pending.then(
-    async (response) => {
-      if (signal.aborted) await cancelResponseBody(response.body);
-    },
-    () => undefined,
-  );
-  const response = await untilAborted(pending, signal);
-  await cancelResponseBody(response.body);
-  return response.status === 204;
 }
 
 /** `pending`, or its signal's reason once `signal` aborts first, whether or not `pending` itself honours the signal. */
@@ -342,37 +266,32 @@ async function keyedPearlAbyssRequest(request: Request): Promise<KeyedPearlAbyss
 }
 
 /**
- * The work one coordinator does for its host: send each distinct upstream request once, within
- * `maximumConcurrentRequests`, and share its buffered answer with every matching request in flight. Only
- * `PearlAbyssCoordinatorObject` builds one, so every host's coordinator asks the deployment's single allowance.
+ * The `PearlAbyssCoordinator` Durable Object's work, whichever host runs it: send each distinct upstream request once,
+ * within `maximumConcurrentRequests`, and share its buffered answer with every matching request in flight.
  *
- * Each distinct request asks `permit` before it waits for an active slot, so a refused one never queues, and at most
- * `MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS` wait beyond the active ones. Each has `PEARL_ABYSS_REQUEST_TIMEOUT_MS` from its
- * arrival, its permit and its wait included: past it, it leaves the queue or its upstream call is cancelled, and it
- * fails as `upstream/timeout`. A caller that gives up stops only its own wait; the request leaves the queue, or its
- * upstream call is cancelled, once every caller sharing it has given up. Without a permit, nothing caps the rate.
+ * Each distinct request asks its region's rate limit for a permit before it waits for an active slot, so a refused one
+ * never queues, and at most `MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS` wait beyond the active ones. Each has
+ * `PEARL_ABYSS_REQUEST_TIMEOUT_MS` from its arrival, its permit and its wait included: past it, it leaves the queue or
+ * its upstream call is cancelled, and it fails as `upstream/timeout`. A caller that gives up stops only its own wait;
+ * the request leaves the queue, or its upstream call is cancelled, once every caller sharing it has given up. Without a
+ * limiter, nothing caps the rate.
  */
-class PearlAbyssCoordination implements PearlAbyssCoordinatorPort {
+export class PearlAbyssCoordinatorObject implements PearlAbyssCoordinatorPort {
   private readonly requests: PearlAbyssInFlightCoordinator<DistinctPearlAbyssRequest, BufferedPearlAbyssResponse>;
   private readonly permit: PearlAbyssPermit | undefined;
   private readonly upstream: (request: Request) => Promise<Response>;
 
-  public constructor(options: {
-    readonly maximumConcurrentRequests: number;
-    readonly permit: PearlAbyssPermit | undefined;
-    readonly upstream: (request: Request) => Promise<Response>;
-    readonly clock: PearlAbyssCoordinatorClock;
-  }) {
-    this.permit = options.permit;
-    this.upstream = options.upstream;
-    const clock = options.clock;
+  public constructor(options: PearlAbyssCoordinatorOptions) {
+    const clock = options.clock ?? RUNTIME_CLOCK;
+    this.permit = options.limiter === undefined ? undefined : regionRateLimit(options.limiter, clock);
+    this.upstream = options.upstream ?? ((request) => fetch(request));
     this.requests = new PearlAbyssInFlightCoordinator(
       {
         maximumActiveRequests: options.maximumConcurrentRequests,
         maximumQueuedRequests: MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS,
       },
       {
-        admit: (_request, signal) => this.admit(signal),
+        admit: (request, signal) => this.admit(request, signal),
         send: (request, signal) => this.send(request, signal),
         deadline: () => clock.timeout(PEARL_ABYSS_REQUEST_TIMEOUT_MS),
       },
@@ -397,10 +316,13 @@ class PearlAbyssCoordination implements PearlAbyssCoordinatorPort {
     return this.requests.execute(keyed.key, keyed.request, signal);
   }
 
-  private async admit(signal: AbortSignal): Promise<BufferedPearlAbyssResponse | undefined> {
+  private async admit(
+    request: DistinctPearlAbyssRequest,
+    signal: AbortSignal,
+  ): Promise<BufferedPearlAbyssResponse | undefined> {
     if (this.permit === undefined) return undefined;
     try {
-      return (await this.permit(signal)) ? undefined : RATE_LIMITED;
+      return (await this.permit(request, signal)) ? undefined : RATE_LIMITED;
     } catch {
       return RATE_LIMITED;
     }

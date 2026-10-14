@@ -410,11 +410,10 @@ function withCacheStatus(response: Response, status: string): Response {
 }
 
 function coordinators(world: MarketErrorSemanticsWorld): (hostname: string) => PearlAbyssCoordinatorPort {
-  // The real coordinator, serving as its own allowance behind a limiter that admits nothing, never reaches Pearl Abyss.
+  // The real coordinator, behind a limiter that admits nothing, never reaches Pearl Abyss.
   const throttled: PearlAbyssCoordinatorPort = new PearlAbyssCoordinatorObject({
     maximumConcurrentRequests: 6,
     limiter: { limit: async () => ({ success: false }) },
-    allowance: () => throttled,
   });
   return (hostname) => {
     if (world.behaviour === "throttled") return throttled;

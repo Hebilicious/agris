@@ -5,12 +5,10 @@ import type { MarketEnv } from "./env.js";
 import {
   executeMarketSubgraph,
   maximumConcurrentRequestsFromBinding,
-  PEARL_ABYSS_ALLOWANCE_ADDRESS,
   pearlAbyssCoordinatorAddress,
   PearlAbyssCoordinatorObject,
   readinessResponse,
   standaloneBudget,
-  type PearlAbyssCoordinatorAddress,
   type PearlAbyssCoordinatorPort,
 } from "./market.js";
 
@@ -33,8 +31,8 @@ export class BudgetedMarketSubgraph extends WorkerEntrypoint<MarketEnv> {
 
 /**
  * One coordinator per Pearl Abyss host, placed by its name's location hint next to the server that answers it. It
- * admits each distinct upstream request once, within `PA_MAX_CONCURRENT_REQUESTS`, after a permit from the one object
- * at `PEARL_ABYSS_ALLOWANCE_ADDRESS`, which alone consults `PA_RATE_LIMITER` when it is bound.
+ * admits each distinct upstream request once, within `PA_MAX_CONCURRENT_REQUESTS`, after a permit from `PA_RATE_LIMITER`
+ * when it is bound, counted for its own host alone: each Pearl Abyss region has its own rate limit.
  *
  * A caller's abort reaches it only when the Worker runs with the `enable_request_signal` compatibility flag; without
  * it, a read whose caller gave up still waits its turn and is sent, until its 30-second deadline drops it.
@@ -47,7 +45,6 @@ export class PearlAbyssCoordinator extends DurableObject<MarketEnv> {
     this.coordinator = new PearlAbyssCoordinatorObject({
       maximumConcurrentRequests: maximumConcurrentRequestsFromBinding(env.PA_MAX_CONCURRENT_REQUESTS),
       limiter: env.PA_RATE_LIMITER,
-      allowance: () => coordinatorAt(env, PEARL_ABYSS_ALLOWANCE_ADDRESS),
     });
   }
 
@@ -68,10 +65,9 @@ export const marketWorker = {
 export default marketWorker;
 
 function coordinatorFor(env: MarketEnv): (hostname: string) => PearlAbyssCoordinatorPort {
-  return (hostname) => coordinatorAt(env, pearlAbyssCoordinatorAddress(hostname));
-}
-
-function coordinatorAt(env: MarketEnv, address: PearlAbyssCoordinatorAddress): PearlAbyssCoordinatorPort {
-  const coordinator = env.PA_COORDINATOR.getByName(address.name, { locationHint: address.locationHint });
-  return { execute: (request) => coordinator.fetch(request) };
+  return (hostname) => {
+    const { name, locationHint } = pearlAbyssCoordinatorAddress(hostname);
+    const coordinator = env.PA_COORDINATOR.getByName(name, { locationHint });
+    return { execute: (request) => coordinator.fetch(request) };
+  };
 }

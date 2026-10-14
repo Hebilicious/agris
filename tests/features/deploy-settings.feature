@@ -10,7 +10,7 @@ Feature: Deploy settings
     Then its Workers are named agris, agris-cache, agris-market and agris-catalog
     And its gateway binds a client rate limit of 60 a minute and no global rate limit
     And its gateway and cache Workers set no exact market admission
-    And its market Worker binds a Pearl Abyss rate limit of 100 per 10 seconds for the whole deployment and a concurrency of 6 per host
+    And its market Worker binds a Pearl Abyss rate limit of 100 per 10 seconds per region and a concurrency of 6 per host
     And its gateway, cache and market Workers allow 50 subrequests and bind SUBREQUEST_LIMIT to 50
     And its gateway binds no cache or query variable, so it runs the default policy and limits
     And it answers on workers.dev and on no other hostname
@@ -74,5 +74,5 @@ Feature: Deploy settings
     Then its Workers are named agris-demo, agris-demo-cache, agris-demo-market and agris-demo-catalog
     And its gateway binds a client rate limit of 10 a minute and a global rate limit of 120 a minute
     And its gateway and cache Workers admit each client's market executions exactly 10 per 60 seconds
-    And its market Worker binds a Pearl Abyss rate limit of 20 a minute for the whole deployment and a concurrency of 2 per host
+    And its market Worker binds a Pearl Abyss rate limit of 20 a minute per region and a concurrency of 2 per host
     And its gateway keeps every storable answer for at least 600 seconds and labels every response as the demo
