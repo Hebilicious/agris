@@ -281,6 +281,8 @@ Plugins run where the gateway executes: on a cache miss, a refresh or an uncache
 - `moon run agris:demo-deploy` deploys the `demo` stage: `agris-demo` and its cache, market and catalog Workers, API only (GraphQL, GraphiQL and `/health`), with the limits in the demo columns above. Alchemy creates and owns all four Workers.
 - `moon run agris:docs-deploy` builds the website and deploys the `docs` stage: `agris-docs`, an assets-only Worker serving `website/dist`. Cloudflare's asset layer answers every request, so no Worker code runs and static asset requests are free.
 
+CI deploys both after every push to `main` that passes `agris:check` (`.github/workflows/check.yml`): the demo when the push changes a file its Workers are built from (the inputs of `infra:demo-deploy`), the docs when it changes a file the site is built from (the inputs of `website:build` or `infra:docs-deploy`). A push that changes neither deploys nothing, so a demo's cache only starts cold when its code changed. Running the workflow by hand deploys both. The credentials, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, are secrets of the repository's `cloudflare` environment, which only `main` may use; the token needs Workers Scripts edit, Account Settings read and Secrets Store edit, the last so Alchemy can read its state store's token.
+
 Neither is for forks: deploy your own stage instead.
 
 ## Cost

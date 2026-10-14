@@ -1,11 +1,19 @@
 # Runs `agris:check`, everything a change must pass, on every pull request and
 # on every push to main. Toolchain versions come from `.prototools`.
+#
+# After a push to main passes, the `deploy` job redeploys the maintainer's
+# stages that the push changed: `demo` when a file the demo's Workers are built
+# from changed (the inputs of `infra:demo-deploy`), `docs` when a file the
+# website is built from changed (the inputs of `website:build` or
+# `infra:docs-deploy`). Moon decides from those declared inputs, so this file
+# keeps no list of paths. Running the workflow by hand deploys both.
 name: Check
 
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,3 +39,75 @@ jobs:
 
       - name: Run agris:check
         run: moon run agris:check
+
+  deploy:
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The Cloudflare credentials live in this environment, which only main may use.
+    environment: cloudflare
+    # One deploy at a time, and never cancel one halfway through.
+    concurrency:
+      group: deploy-maintainer-stages
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: moonrepo/setup-toolchain@v0
+        with:
+          auto-install: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Find the stages this push changed
+        id: stages
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # A manual run, or a push without a usable base, deploys both.
+          if [ "$EVENT" != "push" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "demo=true" >> "$GITHUB_OUTPUT"
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Without a terminal, moon reads changed files from stdin unless it is closed.
+          tasks=$(MOON_BASE="$BEFORE" MOON_HEAD="$GITHUB_SHA" moon query affected < /dev/null | jq -r '.tasks | keys[]')
+          affected() { grep -qxF "$1" <<< "$tasks"; }
+          demo=false
+          docs=false
+          if affected infra:demo-deploy; then demo=true; fi
+          if affected website:build || affected infra:docs-deploy; then docs=true; fi
+          echo "demo=$demo" >> "$GITHUB_OUTPUT"
+          echo "docs=$docs" >> "$GITHUB_OUTPUT"
+          echo "Changed since $BEFORE: demo=$demo, docs=$docs"
+
+      - name: Require the Cloudflare credentials
+        if: steps.stages.outputs.demo == 'true' || steps.stages.outputs.docs == 'true'
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the repository's cloudflare environment."
+            exit 1
+          fi
+
+      # The deploy tasks skip themselves in CI (`runInCI: "skip"`), so a stray `moon ci` never deploys; these steps run
+      # the same Alchemy commands as `infra:demo-deploy` and `infra:docs-deploy`.
+      - name: Deploy the demo
+        if: steps.stages.outputs.demo == 'true'
+        working-directory: infra
+        run: pnpm exec alchemy deploy alchemy.run.ts --stage demo --yes
+
+      - name: Build the website
+        if: steps.stages.outputs.docs == 'true'
+        run: moon run website:build
+
+      - name: Deploy the docs
+        if: steps.stages.outputs.docs == 'true'
+        working-directory: infra
+        run: pnpm exec alchemy deploy alchemy.run.ts --stage docs --yes
