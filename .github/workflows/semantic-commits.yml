@@ -1,0 +1,60 @@
+# Enforces Conventional Commits on pull request titles and on every commit a
+# pull request or a push to main brings in: `type(scope): summary`, scope
+# optional, `!` before the colon for a breaking change.
+name: Semantic commits
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PATTERN: '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^ ].*$'
+
+jobs:
+  pull-request-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the pull request title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! grep -Eq "$PATTERN" <<< "$TITLE"; then
+            echo "::error::Pull request title \"$TITLE\" is not of the form type(scope): summary"
+            exit 1
+          fi
+
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check each commit subject
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # A new branch or a force push has no usable base; check the head commit alone.
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            range="$HEAD -1"
+          else
+            range="$BASE..$HEAD"
+          fi
+
+          failed=0
+          while IFS= read -r line; do
+            sha="${line%% *}"
+            subject="${line#* }"
+            if ! grep -Eq "$PATTERN" <<< "$subject"; then
+              echo "::error::Commit ${sha:0:7} \"$subject\" is not of the form type(scope): summary"
+              failed=1
+            fi
+          done < <(git log --no-merges --format='%H %s' $range)
+          exit $failed

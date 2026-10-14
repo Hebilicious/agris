@@ -46,6 +46,7 @@ Deploy tasks (`agris:deploy`, `agris:demo-deploy`, `agris:docs-deploy`, `infra:*
 ## Conventions
 
 - TypeScript only, strict, with no `any` or `@ts-ignore`. The site is `.astro` components with TypeScript frontmatter and scripts, and no UI framework.
+- Commit subjects and pull request titles are Conventional Commits, `type(scope): summary` (for example `fix(pearl-abyss): reject rows with a missing price`): the type is one of `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, the scope is optional and lowercase (a moon project ID fits), and `!` before the colon marks a breaking change. `.github/workflows/semantic-commits.yml` enforces it.
 - Lint with oxlint, format with oxfmt (120 columns). `website/vendor/` holds the anatomy figure kit kept byte-identical to upstream, including its `.mjs` modules (the one exception to TypeScript only, with `.d.mts` declarations beside them), and is excluded from both.
 - Dependencies: add the version to `catalog:` in `pnpm-workspace.yaml` and reference it as `"catalog:"` from the package. Packages are `private` and export `src/*.ts` directly.
 - Keep every `tsconfig.json` `extends` relative to its project: other workspaces mount Agris as a git submodule and install its `packages/*` and `apps/*` through pnpm.
