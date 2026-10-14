@@ -43,6 +43,13 @@ export function pearlAbyssCategoriesFor(
   return pairs;
 }
 
+/** Whether the Central Market has `category`: a main category, or one subcategory of it. */
+export function isPearlAbyssMarketCategory(category: { readonly main: number; readonly sub: number | null }): boolean {
+  return PEARL_ABYSS_MARKET_CATEGORIES.some(
+    (pair) => pair.main === category.main && (category.sub === null || pair.sub === category.sub),
+  );
+}
+
 function range(first: number, last: number): readonly number[] {
   return Array.from({ length: last - first + 1 }, (_unused, index) => first + index);
 }

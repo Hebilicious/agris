@@ -95,11 +95,13 @@ type ItemSearchResult {
 """One region's Central Market, with item names in one language."""
 type Market {
   """
-  Every item listed in a category, ordered by item ID. Null when it could not be read; the error says why.
+  Every item listed in one category, ordered by item ID. Null when it could not be read; the error says why.
   """
   catalog(
-    """The category to list. Omit it for every category."""
-    category: MarketCategoryInput
+    """
+    The category to list: a main category, which reads each of its subcategories, or one subcategory.
+    """
+    category: MarketCategoryInput!
   ): [MarketItem!]
 
   """

@@ -62,7 +62,7 @@ type Query {
 - **`searchItems`** finds every item whose name in `locale` contains the query. Matching ignores case, Latin accents, whitespace and punctuation (`blackstone` finds "Black Stone", `epee` finds "Épée"); it does not correct typos. Results are ordered exact match, then prefix, then other matches. `totalCount` counts every match; `first` (1 to 100) limits what is returned.
 - **`Market`** is one region seen in one name locale:
   - `items(ids:)`: summary facts for the given items, in your order. An item with no market data comes back with `isListed: false` and `null` numbers.
-  - `catalog(category:)`: everything listed in a category (`{ main, sub }`).
+  - `catalog(category:)`: everything listed in one category: a main category (`{ main }`, which reads each of its subcategories) or one subcategory (`{ main, sub }`). The category is required, because reading every category takes more Pearl Abyss requests than one query may spend.
   - `hotItems`: items whose price is moving, with direction and amount.
   - `registrations`: the queue of items waiting to be listed.
   - `observedAt`: when the market data was read.
@@ -93,8 +93,8 @@ Request-level failures have a body of the form `{"errors":[{"message":"..."}]}` 
 Field-level errors carry a code in `extensions.code`:
 
 - `BAD_USER_INPUT` from the catalog: `searchItems` got a query shorter than 3 characters after folding, longer than the longest item name, or `first` outside 1 to 100, with no partial data; or `item(id:)` or `items(ids:)` got an item ID that is not a positive whole number. The message says which.
-- `BAD_USER_INPUT` from the market: an item ID that is not a positive whole number, or an enhancement level outside 0 to 20. The message says which.
-- `QUERY_BUDGET_EXCEEDED`: a market-summary batch asked for more than 100 distinct items, the request needed more than 6 distinct summary batches, or it needed more subgraph calls and Pearl Abyss requests than the deployment's subrequest budget (50 by default). The affected nullable fields are `null`; sibling data survives. Ask for fewer markets, items or categories in one query. A budget refusal is never a `503`: nothing was sent to Pearl Abyss.
+- `BAD_USER_INPUT` from the market: an item ID that is not a positive whole number, an enhancement level outside 0 to 20, or a category the Central Market does not have. The message says which.
+- `QUERY_BUDGET_EXCEEDED`: a market-summary batch asked for more than 100 distinct items, whether through `Market.items(ids:)` or `Item.marketSummary`, the request needed more than 6 distinct summary batches, or it needed more subgraph calls and Pearl Abyss requests than the deployment's subrequest budget (50 by default). The affected nullable fields are `null`; sibling data survives. Ask for fewer markets, items or categories in one query. A budget refusal is never a `503`: nothing was sent to Pearl Abyss.
 - `RATE_LIMITED`: the market's Pearl Abyss limit refused the read. The message gives the seconds to wait; when nothing else in the query was read, the whole answer is a `429` with `Retry-After`, unless the edge still keeps an earlier answer to the query, which it then serves stale.
 - `UPSTREAM_UNAVAILABLE`: Pearl Abyss could not be reached, did not answer in time, or sent an answer that could not be read, for this field. Other fields keep their data.
 - `INTERNAL_SERVER_ERROR`: anything else went wrong in a subgraph. The message is always "The market subgraph could not answer this field." or "The catalog subgraph could not answer this field.": internal error text never leaves a subgraph.
