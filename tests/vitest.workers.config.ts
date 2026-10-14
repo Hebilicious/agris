@@ -6,6 +6,7 @@ import { defineConfig } from "vitest/config";
 const MARKET_WORKER_NAME = "agris-market";
 const RATE_LIMITED_MARKET_WORKER_NAME = "agris-market-rate-limited";
 const UNLIMITED_MARKET_WORKER_NAME = "agris-market-unlimited";
+const LOCAL_GATEWAY_WORKER_NAME = "agris-local-gateway";
 const observedPearlAbyssSummaryKeys: string[] = [];
 const decodePearlAbyssSummaryRequest = Schema.decodeUnknownOption(
   Schema.Struct({ keyType: Schema.Literal(0), searchResult: Schema.String }),
@@ -15,6 +16,11 @@ const decodePearlAbyssSummaryRequest = Schema.decodeUnknownOption(
 const MARKET_BUNDLE = {
   scriptPath: fileURLToPath(new URL("../.artifacts/alchemy-bundles/HostMarket/index.js", import.meta.url)),
   modulesRoot: fileURLToPath(new URL("../.artifacts/alchemy-bundles/HostMarket/", import.meta.url)),
+};
+/** The local gateway entrypoint as `moon run infra:bundle` bundles it, the catalog inline. */
+const LOCAL_GATEWAY_BUNDLE = {
+  scriptPath: fileURLToPath(new URL("../.artifacts/alchemy-bundles/HostLocalGateway/local.js", import.meta.url)),
+  modulesRoot: fileURLToPath(new URL("../.artifacts/alchemy-bundles/HostLocalGateway/", import.meta.url)),
 };
 export default defineConfig({
   resolve: {
@@ -44,6 +50,7 @@ export default defineConfig({
           MARKET: { name: MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" },
           MARKET_RATE_LIMITED: { name: RATE_LIMITED_MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" },
           MARKET_UNLIMITED: { name: UNLIMITED_MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" },
+          LOCAL_GATEWAY: { name: LOCAL_GATEWAY_WORKER_NAME },
           CATALOG: () => Response.json({ errors: [{ message: "Catalog is outside this gateway scenario" }] }),
           PA_OBSERVER: async (request) => {
             if (request.method === "DELETE") {
@@ -57,6 +64,16 @@ export default defineConfig({
           },
         },
         workers: [
+          {
+            // The local gateway as a host binds it: a raised subrequest budget and a cache setting of its own.
+            name: LOCAL_GATEWAY_WORKER_NAME,
+            ...LOCAL_GATEWAY_BUNDLE,
+            modules: true,
+            compatibilityDate: "2026-08-24",
+            compatibilityFlags: ["nodejs_compat"],
+            bindings: { SUBREQUEST_LIMIT: "3", CACHE_NEVER_STORED: "Item.marketSummary" },
+            serviceBindings: { MARKET: { name: MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" } },
+          },
           {
             name: MARKET_WORKER_NAME,
             ...MARKET_BUNDLE,

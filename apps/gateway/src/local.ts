@@ -1,10 +1,12 @@
 import { createCatalogSubgraph } from "@agris/catalog-subgraph";
 import type { ServiceBindingPort } from "@agris/core";
+import { subrequestLimitFromBinding } from "@agris/invocation-budget";
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import type { LocalGatewayEnv } from "./env.js";
 
 import {
+  deploymentCacheFreshness,
   executeAgrisProxy,
   agrisProxyWorker,
   serviceBindingPort,
@@ -39,6 +41,14 @@ export default {
   },
 } satisfies ExportedHandler<LocalGatewayEnv>;
 
+/** The deployed gateway's runtime, with the catalog served inline: the same subrequest budget and cache settings. */
 function localRuntime(env: LocalGatewayEnv): AgrisProxyRuntimeEnv {
-  return { MARKET: serviceBindingPort(env.MARKET), CATALOG: catalog, LOCAL_INLINE_CATALOG: true };
+  const cacheFreshness = deploymentCacheFreshness(env);
+  return {
+    MARKET: serviceBindingPort(env.MARKET),
+    CATALOG: catalog,
+    LOCAL_INLINE_CATALOG: true,
+    subrequestLimit: subrequestLimitFromBinding(env.SUBREQUEST_LIMIT),
+    ...(cacheFreshness === undefined ? undefined : { cacheFreshness }),
+  };
 }

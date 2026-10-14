@@ -2,9 +2,8 @@
  * The bindings the gateway Worker reads. A deployment configuration, this repository's or a host's, must provide them;
  * `infra/src/smoke/env.check.ts` proves the smoke stage, which deploys this entrypoint as a host does, provides them.
  *
- * Besides these, the gateway reads its cache settings from plain-text `CACHE_*` variables (`CACHE_SETTING_NAMES` in
- * `@agris/core`), each optional: a deployment that binds none runs `DEFAULT_CACHE_FRESHNESS`, and the gateway refuses a
- * `CACHE_` variable it does not know.
+ * A deployment that binds no `CACHE_*` setting runs `DEFAULT_CACHE_FRESHNESS`, and the gateway refuses a `CACHE_`
+ * variable it does not know.
  */
 export interface GatewayEnv {
   /** The market Worker's `BudgetedMarketSubgraph` entrypoint. */
@@ -16,6 +15,11 @@ export interface GatewayEnv {
    * `@agris/invocation-budget`). A deployment that raises `limits.subrequests` sets this to the same number.
    */
   readonly SUBREQUEST_LIMIT?: string;
+  /**
+   * The cache settings (`CACHE_SETTING_NAMES` in `@agris/core`): plain text, or a JSON number or boolean where the
+   * setting takes one. Every one is optional.
+   */
+  readonly [cacheSetting: `CACHE_${string}`]: string | number | boolean | undefined;
 }
 
 /** The cache-smoke deployment, which can make its subgraphs fail on request. */
@@ -23,10 +27,11 @@ export interface SmokeGatewayEnv extends GatewayEnv {
   readonly CACHE_SMOKE_MODE: "enabled";
 }
 
-/** The local gateway serves the catalog inline, so it binds only the local market Worker. */
-export interface LocalGatewayEnv {
-  readonly MARKET: Fetcher;
-}
+/**
+ * The local gateway serves the catalog inline, so it binds only the local market Worker. It reads `SUBREQUEST_LIMIT`
+ * and the `CACHE_*` settings as the deployed gateway does.
+ */
+export type LocalGatewayEnv = Omit<GatewayEnv, "CATALOG">;
 
 /** A Cloudflare `ratelimit` binding, as far as the public gateway uses it. */
 export interface RateLimitPort {

@@ -32,3 +32,9 @@ Feature: Central Market Worker entrypoints
     When the real Agris Proxy executes a market item query with a plugin that records each operation
     Then the plugin recorded the operation WorkerEntrypoints once
     And the response still carries the Pearl Abyss summary
+
+  @scenario:worker-entrypoints-local-gateway-settings @provenance:spec @i1
+  Scenario: The local gateway applies the subrequest budget and cache settings its host binds
+    When the local gateway reads an item's NA and EU market summaries with SUBREQUEST_LIMIT 3 and CACHE_NEVER_STORED naming Item.marketSummary
+    Then one summary has data and the other reports QUERY_BUDGET_EXCEEDED
+    And the answer is never stored
