@@ -18,7 +18,8 @@ fileGroups:
     - "tsconfig.json"
     - "package.json"
 
-# Every deploy changes a live Cloudflare account: run one only when its owner asks. A deploy reads the account from
+# Every deploy changes a live Cloudflare account: run one only when its owner asks. CI deploys the maintainer's `demo`
+# and `docs` stages after a merge to main that changes what they are built from (`.github/workflows/check.yml`). A deploy reads the account from
 # `CLOUDFLARE_ACCOUNT_ID` and signs in with `CLOUDFLARE_API_TOKEN` or an Alchemy profile; Alchemy keeps the stack's
 # state in the account's own state-store Worker, so nothing about the account is written to the repository.
 tasks:
@@ -109,6 +110,20 @@ tasks:
     command: "alchemy"
     args: ["deploy", "alchemy.run.ts", "--stage", "demo", "--yes"]
     deps: ["typecheck"]
+    # What the demo's four Workers are built from. The task never caches; CI redeploys the demo after a merge to main
+    # that changes one of these (`.github/workflows/check.yml`).
+    inputs:
+      - "alchemy.run.ts"
+      - "src/**/*"
+      - "package.json"
+      - "/apps/*/src/**/*"
+      - "/apps/*/package.json"
+      - "/packages/*/src/**/*"
+      - "/packages/*/package.json"
+      - "/data/catalog/**/*"
+      - "/tools/schema/artifacts/**/*"
+      - "/pnpm-lock.yaml"
+      - "/pnpm-workspace.yaml"
     options:
       cache: false
       runInCI: "skip"
@@ -120,6 +135,9 @@ tasks:
     command: "alchemy"
     args: ["deploy", "alchemy.run.ts", "--stage", "docs", "--yes"]
     deps: ["typecheck"]
+    # The docs stage itself; what the site shows is `website:build`'s inputs. CI redeploys the docs after a merge to
+    # main that changes either (`.github/workflows/check.yml`).
+    inputs: ["alchemy.run.ts", "src/settings.ts", "src/stack.ts", "package.json", "/pnpm-lock.yaml"]
     options:
       cache: false
       runInCI: "skip"
