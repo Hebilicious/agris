@@ -48,7 +48,7 @@ export const EXAMPLES: readonly Example[] = [
   {
     id: "search",
     title: "Search by name, with live summaries",
-    text: "Part of a name, any case, accents ignored. Each hit carries its NA market summary. Search results are never stored, so this always runs.",
+    text: "Part of a name, any case, accents ignored. Each hit carries its NA market summary, so the answer is stored only as long as those prices stay fresh.",
     card: "search",
     upstreamCalls: 1,
     catalog: true,

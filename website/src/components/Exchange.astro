@@ -14,9 +14,14 @@ import { FIGURE_QUERIES } from "../queries/examples-policy.ts";
 import Icon from "./Icon.astro";
 
 const { maxDepth, maxFields, maxAliases } = PUBLIC_DOCUMENT_LIMITS;
-// A self-hosted gateway limits no visitor by default, so the turnstile turns at the shared demo's limit.
+// The turnstile turns at the shared demo's limit, the smallest a reader meets, so a flood reaches its 429 quickly.
 const machine: MachineFacts = { rate: DEMO.clientRateLimit, carriages: SELF_HOSTED.pearlAbyssConcurrency };
 const { rate, carriages } = machine;
+const ownLimit = SELF_HOSTED.clientRateLimit;
+const ownTurnstile =
+  ownLimit === null
+    ? "A self-hosted gateway turns no visitor away until you set a limit."
+    : `A self-hosted gateway admits ${rateOf(ownLimit)} per visitor by default; you can change the limit or remove it.`;
 const staleIfError = durationOf(SELF_HOSTED.cacheFreshness.staleIfErrorSeconds);
 
 /** What each part is, in the words its label shows on hover, focus or tap. */
@@ -28,7 +33,7 @@ const PARTS: Record<HotspotId, { name: string; text: string }> = {
   },
   turnstile: {
     name: "Turnstile: the rate limit",
-    text: `One tooth per request. The shared demo admits ${rateOf(rate)} per visitor; one more and the pawl holds the wheel, which is a 429. A self-hosted gateway has no turnstile until you set one.`,
+    text: `One tooth per request. The shared demo admits ${rateOf(rate)} per visitor; one more and the pawl holds the wheel, which is a 429. ${ownTurnstile}`,
   },
   punch: {
     name: "Punch: the cache key",
@@ -71,7 +76,7 @@ const label = `A counting-house machine on a bench that stands for the Agris gat
 // The art is markup the kit generates from build-time constants; the hotspots and every attribute that carries words are
 // rendered below as Astro markup, which escapes them. The SVG is a group rather than an image: the parts' hotspots inside
 // it are buttons a keyboard or screen reader can reach.
-const art = figureBody();
+const art = figureBody(FIGURE_QUERIES);
 const data = jsonForScript({ machine, queries: FIGURE_QUERIES });
 const picks = FIGURE_QUERIES.map((query) => ({
   kind: query.kind,

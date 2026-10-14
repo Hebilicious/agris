@@ -15,7 +15,7 @@ Folding, applied to names at build time and to the query once per search:
 
 Examples in English: `blackstone` finds "Black Stone", `chiros` finds "Chiro's", `Advance` finds "Epheria Carrack: Advance (Chiro's Cannon)", and `shiro` does not find "Chiro".
 
-Queries must be at least 3 code points after folding and no longer than the longest folded name. `first` is 1 to 100 (default 50). Results are ordered exact match, then prefix, then other substring matches, with ties broken by folded name and item ID. There is no cursor: refine the query when `totalCount` exceeds what you got back. Search responses are not cached, because arbitrary query strings would fill the cache with single-use entries.
+Queries must be at least 3 code points after folding and no longer than the longest folded name. `first` is 1 to 100 (default 50). Results are ordered exact match, then prefix, then other substring matches, with ties broken by folded name and item ID. There is no cursor: refine the query when `totalCount` exceeds what you got back. Search responses are cached like any other answer: `Query.searchItems` alone keeps the catalog's long window, since names change only with a release, and a search that also selects `marketSummary` takes the shorter price window. A deployer who expects many single-use query strings can add `Query.searchItems` to `CACHE_NEVER_STORED`.
 
 ## Design
 

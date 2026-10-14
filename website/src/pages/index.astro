@@ -101,9 +101,9 @@ const fixes: Fix[] = [
     title: "Rate limits at the door",
     text:
       ownClientLimit === null
-        ? "Set a limit per visitor and Workers rate limiting counts each one before any other work. Past it, they get a 429 with a Retry-After header, and nothing reaches Pearl Abyss."
-        : `Workers rate limiting counts each visitor before any other work. Past ${rateOf(ownClientLimit)}, they get a 429 with a Retry-After header, and nothing reaches Pearl Abyss. Change the limit, or remove it.`,
-    uses: ["Workers rate limiting"],
+        ? "Set a limit per visitor and Workers rate limiting counts each one at the door, before any other work. Past it, they get a 429 with a Retry-After header, and nothing reaches Pearl Abyss. Turn on the exact market limit too, and a Durable Object counts each visitor's market reads exactly, however their requests burst; cached answers never wait for it."
+        : `Workers rate limiting counts each visitor at the door, before any other work. Past ${rateOf(ownClientLimit)}, they get a 429 with a Retry-After header, and nothing reaches Pearl Abyss. Turn on the exact market limit too, and a Durable Object counts each visitor's market reads exactly, however their requests burst or spread across Cloudflare locations; cached answers never wait for it. Change the limits, or remove them.`,
+    uses: ["Workers rate limiting", "Durable Objects"],
   },
 ];
 
