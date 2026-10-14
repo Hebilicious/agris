@@ -56,15 +56,22 @@ export type GatewayCacheStatus = "HIT" | "MISS" | "EXPIRED" | "REVALIDATED" | "S
 export type GatewayResponseSource = "cache-fresh" | "cache-stale" | "live";
 export type GatewayResponseRefresh = "not-attempted" | "in-background" | "succeeded" | "failed";
 
+/**
+ * What the execution's subgraph calls add up to. `answered`: at least one answered, so the response has data or field
+ * errors. Otherwise `rate-limited` when a call was refused by a limiter, and `unavailable` when every call failed.
+ */
+export type GatewayUpstreamOutcome = "answered" | "rate-limited" | "unavailable";
+
 export interface GatewayResponseClassificationInput {
   readonly cacheStatus: GatewayCacheStatus;
   readonly cachePolicy: GatewayCachePolicy;
   readonly hasGraphqlErrors: boolean;
-  readonly totalUpstreamUnavailable: boolean;
+  readonly upstream: GatewayUpstreamOutcome;
 }
 
 export interface GatewayResponseClassification {
-  readonly status: 200 | 503;
+  /** 200 when a subgraph answered, 429 when the calls were rate limited, 503 when they all failed. */
+  readonly status: 200 | 429 | 503;
   readonly headers: {
     readonly "Cache-Control": string;
     readonly "X-Central-Market-Source": GatewayResponseSource;

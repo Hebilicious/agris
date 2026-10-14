@@ -221,7 +221,7 @@ const steps: readonly StepDefinition<CacheFreshnessConfigurationWorld>[] = [
         cacheStatus: "MISS",
         cachePolicy: await cachePolicy(world.policy, "price"),
         hasGraphqlErrors: false,
-        totalUpstreamUnavailable: false,
+        upstream: "answered",
       });
       assert.equal(
         classification.headers["Cache-Control"],

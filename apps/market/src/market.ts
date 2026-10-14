@@ -1,5 +1,6 @@
 import {
   createPearlAbyssMarketReader,
+  PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS,
   PearlAbyssInFlightCoordinator,
   PearlAbyssUpstreamError,
   readPearlAbyssResponseBody,
@@ -244,12 +245,16 @@ export async function executeMarketSubgraph(
       }),
       clock: { nowIso: () => new Date().toISOString() },
     });
+    const outcome = availability.getSnapshot();
+    const throttled = outcome.matches("throttled");
     return new Response(response.body, {
-      status: availability.getSnapshot().matches("totalUnavailable") ? 503 : response.status,
+      // Nothing was read: 429 when a limiter refused the reads, 503 when Pearl Abyss could not be reached.
+      status: throttled ? 429 : outcome.matches("totalUnavailable") ? 503 : response.status,
       headers: {
         "Cache-Control": "no-store",
         "Content-Type": response.headers.get("content-type") ?? "application/graphql-response+json; charset=utf-8",
         "X-Content-Type-Options": "nosniff",
+        ...(throttled ? { "Retry-After": String(PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS) } : {}),
       },
     });
   } finally {

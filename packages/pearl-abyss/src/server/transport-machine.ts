@@ -26,6 +26,12 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MAXIMUM_OUTBOUND_CONNECTIONS = 6;
 export const MAXIMUM_PEARL_ABYSS_RESPONSE_BYTES = 1_024 * 1_024;
 
+/**
+ * How long a caller should wait after Pearl Abyss work was throttled, in seconds: the longest window a Workers rate
+ * limit counts over, so the market's limiter has always started a fresh window by then.
+ */
+export const PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS = 60;
+
 export type PearlAbyssUpstreamErrorCode =
   | "upstream/budget-exceeded"
   | "upstream/invalid-response"
@@ -77,7 +83,12 @@ export interface PearlAbyssMarketReaderInput {
   readonly timeoutMs?: number;
 }
 
-export type PearlAbyssRequestSettlement = "succeeded" | "failed";
+/**
+ * How one distinct Pearl Abyss read ended: it `succeeded`; it `failed` to arrive (unreachable, an unsuccessful status,
+ * a timeout or an unreadable answer); it was `rate-limited` by a limiter in front of Pearl Abyss; or it was `refused`
+ * by the invocation budget before anything was sent. Only `failed` says anything about Pearl Abyss itself.
+ */
+export type PearlAbyssRequestSettlement = "succeeded" | "failed" | "rate-limited" | "refused";
 
 export interface NormalizedMarketSummary {
   readonly itemId: number;
@@ -326,10 +337,19 @@ class PearlAbyssRequestCoordinator {
       this.input.onRequestSettled?.("succeeded");
       return response;
     } catch (error: unknown) {
-      this.input.onRequestSettled?.("failed");
+      this.input.onRequestSettled?.(failedSettlement(error));
       throw error;
     }
   }
+}
+
+function failedSettlement(error: unknown): Exclude<PearlAbyssRequestSettlement, "succeeded"> {
+  if (error instanceof MarketSummaryBudgetExceededError) return "refused";
+  if (error instanceof PearlAbyssUpstreamError) {
+    if (error.code === "upstream/budget-exceeded") return "refused";
+    if (error.code === "upstream/rate-limited") return "rate-limited";
+  }
+  return "failed";
 }
 
 function createRequestLifecycleMachine(

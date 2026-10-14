@@ -2,7 +2,11 @@ import { buildSubgraphSchema, printSubgraphSchema } from "@apollo/subgraph";
 import { positiveItemId } from "@agris/pearl-abyss/item-id";
 import { PEARL_ABYSS_ITEM_LOCALE_DESCRIPTIONS } from "@agris/pearl-abyss/locales";
 import { PEARL_ABYSS_REGION_DESCRIPTIONS } from "@agris/pearl-abyss/regions";
-import { MarketSummaryBudgetExceededError, PearlAbyssUpstreamError } from "@agris/pearl-abyss/server";
+import {
+  MarketSummaryBudgetExceededError,
+  PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS,
+  PearlAbyssUpstreamError,
+} from "@agris/pearl-abyss/server";
 import SchemaBuilder, { initContextCache } from "@pothos/core";
 import DataloaderPlugin from "@pothos/plugin-dataloader";
 import DirectivePlugin from "@pothos/plugin-directives";
@@ -145,9 +149,10 @@ export function createMarketSubgraph(input?: MarketSubgraphInput): MarketSubgrap
  *
  * - `BAD_USER_INPUT`: the query is wrong; the message says what to change.
  * - `QUERY_BUDGET_EXCEEDED`: the query asks for more than the deployment's budget allows; ask for less in one query.
+ * - `RATE_LIMITED`: a limiter in front of Pearl Abyss refused the read; retry after the time the message gives.
  * - `UPSTREAM_UNAVAILABLE`: Pearl Abyss could not be reached, did not answer in time, or sent an unreadable answer.
  */
-type MarketErrorCode = "BAD_USER_INPUT" | "QUERY_BUDGET_EXCEEDED" | "UPSTREAM_UNAVAILABLE";
+type MarketErrorCode = "BAD_USER_INPUT" | "QUERY_BUDGET_EXCEEDED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE";
 
 const INTERNAL_ERROR_MESSAGE = "The market subgraph could not answer this field.";
 
@@ -158,10 +163,10 @@ const INTERNAL_ERROR_MESSAGE = "The market subgraph could not answer this field.
 const MARKET_ERRORS = new WeakSet<Error>();
 
 /**
- * The reader, with each way a Pearl Abyss read can fail reported as a `MarketErrorCode` with a fixed message.
- * A read the invocation budget refused is `QUERY_BUDGET_EXCEEDED`: the query asks for more Pearl Abyss requests than
- * the deployment's subrequest limit allows, which the caller fixes by asking less. Any other failed read is
- * `UPSTREAM_UNAVAILABLE`, without the reason, which is about Pearl Abyss's internals.
+ * The reader, with each way a read can fail reported as a `MarketErrorCode` with a fixed message.
+ * A budget refusal is `QUERY_BUDGET_EXCEEDED`: the query asks for more Pearl Abyss requests, or more summary batches,
+ * than the deployment allows, which the caller fixes by asking less. A throttled read is `RATE_LIMITED`. A read that
+ * failed to arrive is `UPSTREAM_UNAVAILABLE`, without the reason, which is about Pearl Abyss's internals.
  */
 function readErrorsAsQueryErrors(reader: MarketReader): MarketReader {
   const guard = <Value>(read: () => Promise<Value>): Promise<Value> =>
@@ -180,6 +185,12 @@ function readErrorsAsQueryErrors(reader: MarketReader): MarketReader {
 }
 
 function readErrorAsQueryError(error: unknown): unknown {
+  if (error instanceof MarketSummaryBudgetExceededError) {
+    return marketError(
+      `Market summary operation exceeds this deployment's limit of ${error.limit} distinct batches`,
+      "QUERY_BUDGET_EXCEEDED",
+    );
+  }
   if (!(error instanceof PearlAbyssUpstreamError)) return error;
   switch (error.code) {
     case "upstream/budget-exceeded":
@@ -188,8 +199,12 @@ function readErrorAsQueryError(error: unknown): unknown {
           "markets, items or categories in one query.",
         "QUERY_BUDGET_EXCEEDED",
       );
-    case "upstream/invalid-response":
     case "upstream/rate-limited":
+      return marketError(
+        `The Central Market is being read too often. Retry after ${PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS} seconds.`,
+        "RATE_LIMITED",
+      );
+    case "upstream/invalid-response":
     case "upstream/timeout":
     case "upstream/unavailable":
       return marketError("The Central Market could not be read.", "UPSTREAM_UNAVAILABLE");
@@ -706,18 +721,7 @@ async function loadItemMarketSummaries(
   }
 
   const observation = observationFor(context, region, locale);
-  let summaries: readonly MarketSummary[];
-  try {
-    summaries = await observation.beforeRead(() => context.reader.readSummaries({ region, locale, itemIds }));
-  } catch (error: unknown) {
-    if (error instanceof MarketSummaryBudgetExceededError) {
-      throw marketError(
-        `Market summary operation exceeds this deployment's limit of ${error.limit} distinct batches`,
-        "QUERY_BUDGET_EXCEEDED",
-      );
-    }
-    throw error;
-  }
+  const summaries = await observation.beforeRead(() => context.reader.readSummaries({ region, locale, itemIds }));
   const observedAt = await observation.value();
   const summariesById = new Map(summaries.map((summary) => [summary.itemId, summary]));
   return keys.map((key) => {

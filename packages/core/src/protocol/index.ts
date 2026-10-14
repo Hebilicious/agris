@@ -75,6 +75,7 @@ export type {
   GatewayResponseClassificationInput,
   GatewayResponseRefresh,
   GatewayResponseSource,
+  GatewayUpstreamOutcome,
   JsonObject,
   JsonValue,
   NormalizedExecutionInput,

@@ -3,6 +3,7 @@ import type {
   GatewayResponseClassificationInput,
   GatewayResponseRefresh,
   GatewayResponseSource,
+  GatewayUpstreamOutcome,
 } from "./types.js";
 
 interface GatewayDeliveryClassification {
@@ -10,11 +11,18 @@ interface GatewayDeliveryClassification {
   readonly refresh: GatewayResponseRefresh;
 }
 
+const UPSTREAM_STATUS = {
+  answered: 200,
+  "rate-limited": 429,
+  unavailable: 503,
+} as const satisfies Record<GatewayUpstreamOutcome, GatewayResponseClassification["status"]>;
+
+/** A response is stored only when it has no errors and a subgraph answered; a 429 or a 503 is never stored. */
 export function classifyGatewayResponse(input: GatewayResponseClassificationInput): GatewayResponseClassification {
-  const failed = input.hasGraphqlErrors || input.totalUpstreamUnavailable;
+  const failed = input.hasGraphqlErrors || input.upstream !== "answered";
   const delivery = classifyDelivery(input.cacheStatus, failed);
   return {
-    status: input.totalUpstreamUnavailable ? 503 : 200,
+    status: UPSTREAM_STATUS[input.upstream],
     headers: {
       "Cache-Control": cacheControl(input, failed),
       "X-Central-Market-Source": delivery.source,

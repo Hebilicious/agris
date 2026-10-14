@@ -77,16 +77,16 @@ Locales: `EN`, `DE`, `FR`, `ES` (Latin American Spanish), `ES_EU`, `PT`, `RU`, `
 
 Responses use `Content-Type: application/graphql-response+json; charset=utf-8`.
 
-| Status | Meaning                                                                                           |
-| ------ | ------------------------------------------------------------------------------------------------- |
-| `200`  | The query ran. The body may still contain `errors` next to partial `data`.                        |
-| `400`  | Malformed JSON, invalid document, non-query operation, unknown persisted ID or invalid variables. |
-| `404`  | A path other than `/graphql` or `/health`.                                                        |
-| `405`  | An HTTP method the endpoint does not accept.                                                      |
-| `415`  | A POST without `application/json`.                                                                |
-| `429`  | Rate limited. Wait for the number of seconds in `Retry-After`.                                    |
-| `502`  | The internal response exceeded the 1 MiB ceiling.                                                 |
-| `503`  | Every subgraph call failed, usually because Pearl Abyss is unreachable. Not cached.               |
+| Status | Meaning                                                                                                                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `200`  | The query ran. The body may still contain `errors` next to partial `data`.                                                                                                                                                                             |
+| `400`  | Malformed JSON, invalid document, non-query operation, unknown persisted ID or invalid variables.                                                                                                                                                      |
+| `404`  | A path other than `/graphql` or `/health`.                                                                                                                                                                                                             |
+| `405`  | An HTTP method the endpoint does not accept.                                                                                                                                                                                                           |
+| `415`  | A POST without `application/json`.                                                                                                                                                                                                                     |
+| `429`  | Rate limited: by the gateway's own limits, or because every Pearl Abyss read the query needed was throttled by the market's Pearl Abyss limit, with no cached answer left to serve stale. Wait for the number of seconds in `Retry-After`. Not cached. |
+| `502`  | The internal response exceeded the 1 MiB ceiling.                                                                                                                                                                                                      |
+| `503`  | No subgraph call succeeded because Pearl Abyss or a subgraph could not be reached, did not answer in time, or sent an answer that could not be read. Not cached.                                                                                       |
 
 Request-level failures have a body of the form `{"errors":[{"message":"..."}]}` and `Cache-Control: no-store`.
 
@@ -94,7 +94,8 @@ Field-level errors carry a code in `extensions.code`:
 
 - `BAD_USER_INPUT` from the catalog: `searchItems` got a query shorter than 3 characters after folding, longer than the longest item name, or `first` outside 1 to 100, with no partial data; or `item(id:)` or `items(ids:)` got an item ID that is not a positive whole number. The message says which.
 - `BAD_USER_INPUT` from the market: an item ID that is not a positive whole number, or an enhancement level outside 0 to 20. The message says which.
-- `QUERY_BUDGET_EXCEEDED`: a market-summary batch asked for more than 100 distinct items, the request needed more than 6 distinct summary batches, or it needed more subgraph calls and Pearl Abyss requests than the deployment's subrequest budget (50 by default). The affected nullable fields are `null`; sibling data survives. Ask for fewer markets, items or categories in one query.
+- `QUERY_BUDGET_EXCEEDED`: a market-summary batch asked for more than 100 distinct items, the request needed more than 6 distinct summary batches, or it needed more subgraph calls and Pearl Abyss requests than the deployment's subrequest budget (50 by default). The affected nullable fields are `null`; sibling data survives. Ask for fewer markets, items or categories in one query. A budget refusal is never a `503`: nothing was sent to Pearl Abyss.
+- `RATE_LIMITED`: the market's Pearl Abyss limit refused the read. The message gives the seconds to wait; when nothing else in the query was read, the whole answer is a `429` with `Retry-After`, unless the edge still keeps an earlier answer to the query, which it then serves stale.
 - `UPSTREAM_UNAVAILABLE`: Pearl Abyss could not be reached, did not answer in time, or sent an answer that could not be read, for this field. Other fields keep their data.
 - `INTERNAL_SERVER_ERROR`: anything else went wrong in a subgraph. The message is always "The market subgraph could not answer this field." or "The catalog subgraph could not answer this field.": internal error text never leaves a subgraph.
 
@@ -132,7 +133,7 @@ The gateway chooses a cache lifetime from the fields a query selects. Each schem
 | `MarketItem.priceHistory`                                   | 1 h       | 1 h                                |
 | `Query.item`, `Query.items`, `Query.searchItems`            | 1 year    | 1 day                              |
 
-By default a cached answer stays usable for one more day if a refresh fails (`stale-if-error=86400`). A price nested under a catalog field takes the price window: `items(ids:) { marketSummary(region:) { basePrice } }` keeps for a minute. Queries that select none of the fields above, and responses containing errors, are not stored. The cache key is built from the canonical document and canonical variables, so whitespace, key order and equivalent forms of the same query share one entry.
+By default a cached answer stays usable for one more day if a refresh fails, because Pearl Abyss could not be reached or throttled the refresh (`stale-if-error=86400`). A price nested under a catalog field takes the price window: `items(ids:) { marketSummary(region:) { basePrice } }` keeps for a minute. Queries that select none of the fields above, and responses containing errors, are not stored. The cache key is built from the canonical document and canonical variables, so whitespace, key order and equivalent forms of the same query share one entry.
 
 The gateway's cache settings are plain-text variables, one per value, and every one is optional:
 

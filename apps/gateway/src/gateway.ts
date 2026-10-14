@@ -12,6 +12,7 @@ import {
   type GatewayCachePolicy,
   type GatewayCacheStatus,
   type GatewayRequestProtocol,
+  type GatewayUpstreamOutcome,
   type JsonObject,
   type NormalizedGatewayRequest,
 } from "@agris/core";
@@ -46,6 +47,10 @@ const CATALOG_SUBGRAPH_URL = "https://central-market-catalog.internal/graphql";
 const GRAPHQL_PATH = "/graphql";
 const SUBGRAPH_TIMEOUT_MS = 35_000;
 const CACHE_WRITE_EPOCH_HEADER = "x-central-market-cache-write-epoch-ms";
+/** Marks an execution's 503 as a throttle rather than an outage; `deliverGatewayResponse` reads it and never sends it on. */
+const THROTTLED_EXECUTION_HEADER = "x-agris-upstream-outcome";
+/** How long a rate-limited caller waits when the subgraph that was refused named no time: a Workers rate-limit window. */
+const DEFAULT_RETRY_AFTER_SECONDS = 60;
 
 export interface AgrisProxyRuntimeEnv {
   readonly CATALOG: ServiceBindingPort;
@@ -247,20 +252,26 @@ export async function executeAgrisProxy(env: AgrisProxyRuntimeEnv, props: AgrisP
   if (!bounded.ok) return gatewayResponseTooLarge(bounded.status);
   const body = bounded.body;
   const hasGraphqlErrors = responseHasGraphqlErrors(body);
-  const totalUpstreamUnavailable = subgraphs.totalUpstreamUnavailable();
+  const upstream = subgraphs.upstreamOutcome();
   const classification = classifyGatewayResponse({
     cacheStatus: "MISS",
     cachePolicy: props.cachePolicy,
     hasGraphqlErrors,
-    totalUpstreamUnavailable,
+    upstream,
   });
+  // A throttled execution leaves the edge cache as a 503, the only failure Workers Cache answers with a stale entry
+  // (`stale-if-error`); the marker tells `deliverGatewayResponse` to turn it into the caller's 429.
+  const throttled = upstream === "rate-limited";
   return new Response(body, {
-    status: classification.status,
+    status: throttled ? 503 : classification.status,
     headers: {
       "Cache-Control": classification.headers["Cache-Control"],
       "Content-Type": "application/graphql-response+json; charset=utf-8",
       [CACHE_WRITE_EPOCH_HEADER]: String(Date.now()),
       "X-Content-Type-Options": "nosniff",
+      ...(throttled
+        ? { "Retry-After": String(subgraphs.retryAfterSeconds()), [THROTTLED_EXECUTION_HEADER]: "rate-limited" }
+        : {}),
     },
   });
 }
@@ -282,19 +293,23 @@ async function deliverGatewayResponse(response: Response, cachePolicy: GatewayCa
   if (!bounded.ok) return gatewayResponseTooLarge(bounded.status);
   const body = bounded.body;
   const cacheStatus = gatewayCacheStatus(response.headers.get("cf-cache-status"));
+  // A stale entry the edge served in place of a throttled execution is a 200 without the marker, and passes as data.
+  const upstream = upstreamOutcomeOf(response.status, response.headers.get(THROTTLED_EXECUTION_HEADER));
   const classification = classifyGatewayResponse({
     cacheStatus,
     cachePolicy,
     hasGraphqlErrors: responseHasGraphqlErrors(body),
-    totalUpstreamUnavailable: response.status === 503,
+    upstream,
   });
+  const retryAfter = response.headers.get("retry-after");
   return new Response(body, {
     status: classification.status,
     headers: {
       "Cache-Control":
-        classification.status === 503
-          ? classification.headers["Cache-Control"]
-          : (response.headers.get("cache-control") ?? classification.headers["Cache-Control"]),
+        upstream === "answered"
+          ? (response.headers.get("cache-control") ?? classification.headers["Cache-Control"])
+          : classification.headers["Cache-Control"],
+      ...(upstream === "rate-limited" && retryAfter !== null ? { "Retry-After": retryAfter } : {}),
       "Content-Type": "application/graphql-response+json; charset=utf-8",
       "X-Central-Market-Refresh": classification.headers["X-Central-Market-Refresh"],
       "X-Central-Market-Source": classification.headers["X-Central-Market-Source"],
@@ -309,6 +324,8 @@ class SubgraphExecution {
   private readonly budget: InvocationBudget;
   private readonly marketSummaryBudget: MarketSummaryOperationBudget;
   private successes = 0;
+  /** The longest `Retry-After` of the subgraph calls a limiter refused; `null` while none was. */
+  private rateLimitedRetryAfterSeconds: number | null = null;
   private readonly coordinator: ServiceBindingCoordinator;
   private readonly reserveBudget: InvocationBudgetReservation;
   private readonly reserveMarketSummary: MarketSummaryReservation;
@@ -343,6 +360,14 @@ class SubgraphExecution {
           ? await this.env.CATALOG.fetch(new Request(url, init), this.reserveBudget, this.reserveMarketSummary)
           : await this.coordinator.fetch(url, init);
       if (response.status >= 500) throw new ServiceBindingFailure("service-binding/unavailable");
+      if (response.status === 429) {
+        // The subgraph read nothing because a limiter refused it; its body still carries the field errors.
+        this.rateLimitedRetryAfterSeconds = Math.max(
+          this.rateLimitedRetryAfterSeconds ?? 0,
+          retryAfterSecondsOf(response.headers.get("retry-after")),
+        );
+        return new Response(response.body, { status: 200, headers: response.headers });
+      }
       this.successes += 1;
       return response;
     } catch (error: unknown) {
@@ -356,9 +381,32 @@ class SubgraphExecution {
     }
   }
 
-  public totalUpstreamUnavailable(): boolean {
-    return this.attempts > 0 && this.successes === 0;
+  /** `answered` when any subgraph call answered; otherwise `rate-limited` when one was throttled, else `unavailable`. */
+  public upstreamOutcome(): GatewayUpstreamOutcome {
+    if (this.attempts === 0 || this.successes > 0) return "answered";
+    return this.rateLimitedRetryAfterSeconds === null ? "unavailable" : "rate-limited";
   }
+
+  /** The longest `Retry-After` a rate-limited subgraph asked for. */
+  public retryAfterSeconds(): number {
+    return this.rateLimitedRetryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS;
+  }
+}
+
+/* BOUNDARY: An execution's status and its throttle marker, which only `executeAgrisProxy` sets. */
+function upstreamOutcomeOf(status: number, throttleMarker: string | null): GatewayUpstreamOutcome {
+  if (status === 503) return throttleMarker === "rate-limited" ? "rate-limited" : "unavailable";
+  if (status === 429) return "rate-limited";
+  return "answered";
+}
+
+/*
+ * BOUNDARY: A subgraph's `Retry-After`, which Agris sends as whole seconds; anything else waits the default. A wait
+ * under one second is one, so a refused caller never hears it may retry at once.
+ */
+function retryAfterSecondsOf(value: string | null): number {
+  if (value === null || !/^\d{1,6}$/u.test(value)) return DEFAULT_RETRY_AFTER_SECONDS;
+  return Math.max(1, Number(value));
 }
 
 function subgraphUnavailableResponse(): Response {
