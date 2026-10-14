@@ -7,6 +7,11 @@ const MARKET_WORKER_NAME = "agris-market";
 const RATE_LIMITED_MARKET_WORKER_NAME = "agris-market-rate-limited";
 const UNLIMITED_MARKET_WORKER_NAME = "agris-market-unlimited";
 const LOCAL_GATEWAY_WORKER_NAME = "agris-local-gateway";
+const ABORTABLE_MARKET_WORKER_NAME = "agris-market-abortable";
+/** The Pearl Abyss request the abortable market Worker's upstream holds until the test releases it. */
+const HELD_PEARL_ABYSS_ITEM = "20001";
+let releaseHeldPearlAbyssRequest = (): void => {};
+let heldPearlAbyssRequest = Promise.resolve();
 const observedPearlAbyssSummaryKeys: string[] = [];
 const decodePearlAbyssSummaryRequest = Schema.decodeUnknownOption(
   Schema.Struct({ keyType: Schema.Literal(0), searchResult: Schema.String }),
@@ -43,7 +48,7 @@ export default defineConfig({
       main: "../apps/gateway/src/public.ts",
       miniflare: {
         compatibilityDate: "2026-08-24",
-        compatibilityFlags: ["nodejs_compat"],
+        compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
         bindings: { GRAPHIQL: "enabled" },
         ratelimits: { CLIENT_RATE_LIMITER: { namespace_id: "42010", simple: { limit: 60, period: 60 } } },
         serviceBindings: {
@@ -51,6 +56,18 @@ export default defineConfig({
           MARKET_RATE_LIMITED: { name: RATE_LIMITED_MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" },
           MARKET_UNLIMITED: { name: UNLIMITED_MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" },
           LOCAL_GATEWAY: { name: LOCAL_GATEWAY_WORKER_NAME },
+          MARKET_ABORTABLE: { name: ABORTABLE_MARKET_WORKER_NAME, entrypoint: "BudgetedMarketSubgraph" },
+          // DELETE makes the abortable market Worker hold its next request for HELD_PEARL_ABYSS_ITEM; POST releases it.
+          PA_HOLD: async (request) => {
+            if (request.method === "DELETE") {
+              heldPearlAbyssRequest = new Promise<void>((resolve) => {
+                releaseHeldPearlAbyssRequest = resolve;
+              });
+            } else {
+              releaseHeldPearlAbyssRequest();
+            }
+            return new Response(null, { status: 204 });
+          },
           CATALOG: () => Response.json({ errors: [{ message: "Catalog is outside this gateway scenario" }] }),
           PA_OBSERVER: async (request) => {
             if (request.method === "DELETE") {
@@ -79,7 +96,7 @@ export default defineConfig({
             ...MARKET_BUNDLE,
             modules: true,
             compatibilityDate: "2026-08-24",
-            compatibilityFlags: ["nodejs_compat"],
+            compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
             bindings: { MARKET_ENVIRONMENT: "production", PA_MAX_CONCURRENT_REQUESTS: 6 },
             durableObjects: {
               PA_COORDINATOR: { className: "PearlAbyssCoordinator", useSQLite: true },
@@ -121,7 +138,7 @@ export default defineConfig({
             ...MARKET_BUNDLE,
             modules: true,
             compatibilityDate: "2026-08-24",
-            compatibilityFlags: ["nodejs_compat"],
+            compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
             bindings: { MARKET_ENVIRONMENT: "production", PA_MAX_CONCURRENT_REQUESTS: 6 },
             durableObjects: {
               PA_COORDINATOR: { className: "PearlAbyssCoordinator", useSQLite: true },
@@ -148,7 +165,7 @@ export default defineConfig({
             ...MARKET_BUNDLE,
             modules: true,
             compatibilityDate: "2026-08-24",
-            compatibilityFlags: ["nodejs_compat"],
+            compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
             bindings: { MARKET_ENVIRONMENT: "production" },
             durableObjects: {
               PA_COORDINATOR: { className: "PearlAbyssCoordinator", useSQLite: true },
@@ -160,6 +177,29 @@ export default defineConfig({
               );
               if (itemId === undefined)
                 return Response.json({ message: "Unexpected Pearl Abyss request" }, { status: 502 });
+              return Response.json({ resultCode: 0, resultMsg: `${itemId}-0-377000-114184` });
+            },
+          },
+          {
+            // A deployment whose coordinators run one Pearl Abyss request at once, and whose upstream holds one item.
+            name: ABORTABLE_MARKET_WORKER_NAME,
+            ...MARKET_BUNDLE,
+            modules: true,
+            compatibilityDate: "2026-08-24",
+            compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
+            bindings: { MARKET_ENVIRONMENT: "production", PA_MAX_CONCURRENT_REQUESTS: 1 },
+            durableObjects: {
+              PA_COORDINATOR: { className: "PearlAbyssCoordinator", useSQLite: true },
+            },
+            outboundService: async (request) => {
+              const itemId = Option.getOrUndefined(
+                decodePearlAbyssSummaryRequest(JSON.parse(await request.text())),
+              )?.searchResult;
+              if (itemId === undefined) {
+                return Response.json({ message: "Unexpected Pearl Abyss request" }, { status: 502 });
+              }
+              observedPearlAbyssSummaryKeys.push(`${new URL(request.url).hostname}:${itemId}`);
+              if (itemId === HELD_PEARL_ABYSS_ITEM) await heldPearlAbyssRequest;
               return Response.json({ resultCode: 0, resultMsg: `${itemId}-0-377000-114184` });
             },
           },

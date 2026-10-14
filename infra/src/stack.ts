@@ -23,9 +23,15 @@ export function deployEnvironment(): Readonly<Record<string, string | undefined>
   return process.env;
 }
 
-/** The Workers runtime settings every Agris Worker deploys with. */
+/**
+ * The Workers runtime settings every Agris Worker deploys with.
+ *
+ * `enable_request_signal` makes an incoming request's `signal` abort when its caller goes away; without it the signal
+ * never fires. The Pearl Abyss coordinator relies on it: a market read whose caller gives up leaves the coordinator's
+ * queue instead of being sent anyway. The Workers runtime tests in `tests/` run with the same flags.
+ */
 export function compatibility(): { date: string; flags: string[] } {
-  return { date: "2026-08-24", flags: ["nodejs_compat"] };
+  return { date: "2026-08-24", flags: ["nodejs_compat", "enable_request_signal"] };
 }
 
 /** Rolldown's options for every Worker bundle: ES2026 output, which the Workers runtime runs without lowering. */

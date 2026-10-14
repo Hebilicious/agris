@@ -73,11 +73,16 @@ const steps: readonly StepDefinition<RequestSafetyWorld>[] = [
       });
       world.release = release;
       world.sharedCoordinatorAttempts = 0;
-      const coordinator = new PearlAbyssInFlightCoordinator<string, string>(6, async (request) => {
-        world.sharedCoordinatorAttempts = (world.sharedCoordinatorAttempts ?? 0) + 1;
-        await gate;
-        return request;
-      });
+      const coordinator = new PearlAbyssInFlightCoordinator<string, string>(
+        { maximumActiveRequests: 6, maximumQueuedRequests: 0 },
+        {
+          send: async (request) => {
+            world.sharedCoordinatorAttempts = (world.sharedCoordinatorAttempts ?? 0) + 1;
+            await gate;
+            return request;
+          },
+        },
+      );
       const first = coordinator.execute("same", "first");
       const second = coordinator.execute("same", "second");
       await waitFor(() => world.sharedCoordinatorAttempts === 1);

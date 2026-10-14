@@ -124,12 +124,12 @@ The gateway's limits are [Workers rate-limit bindings](https://developers.cloudf
 
 The market Worker reaches Pearl Abyss through one coordinator per upstream host: a Durable Object that sends each distinct request once, shares its answer with identical requests in flight, and queues the rest behind the concurrency limit.
 
-| Variable                       | Default | Demo    | Off | What it does                                                                               |
-| ------------------------------ | ------- | ------- | --- | ------------------------------------------------------------------------------------------ |
-| `PA_MAX_CONCURRENT_REQUESTS`   | `6`     | `2`     | `0` | Distinct Pearl Abyss calls at once, per upstream host; extra distinct work waits in order. |
-| `PA_RATE_LIMIT_REQUESTS`       | `100`   | `20`    | `0` | Burst backstop on Pearl Abyss calls, per period. A denied call is not sent.                |
-| `PA_RATE_LIMIT_PERIOD_SECONDS` | `10`    | `60`    |     | `10` or `60`.                                                                              |
-| `PA_RATE_LIMIT_NAMESPACE_ID`   | `42003` | `42020` |     | The account-wide namespace that holds the counters.                                        |
+| Variable                       | Default | Demo    | Off | What it does                                                                                                                     |
+| ------------------------------ | ------- | ------- | --- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `PA_MAX_CONCURRENT_REQUESTS`   | `6`     | `2`     | `0` | Distinct Pearl Abyss calls at once, per upstream host; extra distinct work waits in order. `0` still runs at most 1,000 at once. |
+| `PA_RATE_LIMIT_REQUESTS`       | `100`   | `20`    | `0` | Burst backstop on Pearl Abyss calls, per period. A denied call is not sent.                                                      |
+| `PA_RATE_LIMIT_PERIOD_SECONDS` | `10`    | `60`    |     | `10` or `60`.                                                                                                                    |
+| `PA_RATE_LIMIT_NAMESPACE_ID`   | `42003` | `42020` |     | The account-wide namespace that holds the counters.                                                                              |
 
 Turning both off removes Agris's own protection of Pearl Abyss's servers; the cache and the coalescing of identical calls remain.
 
@@ -215,7 +215,7 @@ The stage is the `--stage` argument; `moon run agris:deploy` passes `production`
 
 ### Deploying the Workers' own entrypoints
 
-The Workers' own entrypoints stay deployable without Alchemy, as a host that mounts Agris in its own repository does: re-export `@agris/gateway-worker` (`default`, `CachedAgrisProxy`, or `@agris/gateway-worker/public` for the public surface), `@agris/market-worker` (`default`, `BudgetedMarketSubgraph`, `PearlAbyssCoordinator`) and `@agris/catalog-worker` from your Worker modules, and bind them in your own configuration. The gateway reads the same `CACHE_*` and `QUERY_*` variables and `GRAPHIQL` as plain-text vars; `CLIENT_RATE_LIMITER`, `GLOBAL_RATE_LIMITER` and `PA_RATE_LIMITER` are optional rate-limit bindings, and `PA_MAX_CONCURRENT_REQUESTS` is an optional number (absent or `0`: no limit). The gateway and market Worker read an optional `SUBREQUEST_LIMIT` (absent: 50); if your configuration raises `limits.subrequests`, set `SUBREQUEST_LIMIT` on both to the same number. With none of them bound, the gateway behaves exactly as before these settings existed. The stack's `smoke` stage deploys them this way (`infra/src/smoke/`): `moon run smoke:smoke` deploys it and runs the cache smoke against it, and `moon run infra:smoke-destroy` deletes it.
+The Workers' own entrypoints stay deployable without Alchemy, as a host that mounts Agris in its own repository does: re-export `@agris/gateway-worker` (`default`, `CachedAgrisProxy`, or `@agris/gateway-worker/public` for the public surface), `@agris/market-worker` (`default`, `BudgetedMarketSubgraph`, `PearlAbyssCoordinator`) and `@agris/catalog-worker` from your Worker modules, and bind them in your own configuration. The gateway reads the same `CACHE_*` and `QUERY_*` variables and `GRAPHIQL` as plain-text vars; `CLIENT_RATE_LIMITER`, `GLOBAL_RATE_LIMITER` and `PA_RATE_LIMITER` are optional rate-limit bindings, and `PA_MAX_CONCURRENT_REQUESTS` is an optional number (absent or `0`: no limit of its own, still capped at 1,000 at once with 100 waiting). Deploy the market Worker with the `enable_request_signal` compatibility flag, as the stack does, so a caller that gives up stops its queued Pearl Abyss read. The gateway and market Worker read an optional `SUBREQUEST_LIMIT` (absent: 50); if your configuration raises `limits.subrequests`, set `SUBREQUEST_LIMIT` on both to the same number. With none of them bound, the gateway behaves exactly as before these settings existed. The stack's `smoke` stage deploys them this way (`infra/src/smoke/`): `moon run smoke:smoke` deploys it and runs the cache smoke against it, and `moon run infra:smoke-destroy` deletes it.
 
 ## Rate limiting, and what it costs
 

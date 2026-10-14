@@ -7,7 +7,8 @@ import type { PearlAbyssCoordinator } from "./index.js";
 export interface MarketEnv {
   readonly MARKET_ENVIRONMENT: string;
   /**
-   * Global active Pearl Abyss request limit per upstream host, as a JSON number or text. Absent or `0` sets no limit.
+   * Global active Pearl Abyss request limit per upstream host, as a JSON number or text. Absent or `0` sets no limit of
+   * its own: a coordinator then runs at most `UNLIMITED_CONCURRENT_PEARL_ABYSS_REQUESTS` (1,000) at once.
    */
   readonly PA_MAX_CONCURRENT_REQUESTS?: number | string;
   /** This Worker's own `PearlAbyssCoordinator` Durable Object class. */

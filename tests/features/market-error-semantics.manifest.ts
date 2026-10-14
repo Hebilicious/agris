@@ -29,6 +29,7 @@ import {
 /** How the fake Pearl Abyss behind every coordinator answers. */
 type PearlAbyssBehaviour =
   | "throttled"
+  | "queue-full"
   | "http-500"
   | "answers"
   | "eu-answers-na-unreadable"
@@ -75,11 +76,17 @@ const catalog = createCatalogSubgraph();
 const EU_HOST = PEARL_ABYSS_REGION_HOSTS.EU;
 const NA_HOST = PEARL_ABYSS_REGION_HOSTS.NA;
 
+const QUEUE_FULL_RESPONSE = (): Response =>
+  new Response(null, { status: 429, headers: { "X-Pearl-Abyss-Failure": "upstream/queue-full" } });
+
 const SUMMARY_QUERY = `{ market(region: EU) { items(ids: ["10006"]) { basePrice } } }`;
 
 const steps: readonly StepDefinition<MarketErrorSemanticsWorld>[] = [
   step("the Pearl Abyss rate limiter refuses every request", noStepArguments, (world) => {
     world.behaviour = "throttled";
+  }),
+  step("every Pearl Abyss coordinator's queue is full", noStepArguments, (world) => {
+    world.behaviour = "queue-full";
   }),
   step(
     "a gateway plugin that fails with an internal error, in a runtime whose NODE_ENV is development",
@@ -404,11 +411,14 @@ function withCacheStatus(response: Response, status: string): Response {
 
 function coordinators(world: MarketErrorSemanticsWorld): (hostname: string) => PearlAbyssCoordinatorPort {
   // The real coordinator, behind a limiter that admits nothing, never reaches Pearl Abyss.
-  const throttled: PearlAbyssCoordinatorPort = new PearlAbyssCoordination(6, {
-    limit: async () => ({ success: false }),
+  const throttled: PearlAbyssCoordinatorPort = new PearlAbyssCoordination({
+    maximumConcurrentRequests: 6,
+    limiter: { limit: async () => ({ success: false }) },
   });
   return (hostname) => {
     if (world.behaviour === "throttled") return throttled;
+    // A coordinator past its queue bound refuses at once, as the market Worker's Durable Object answers.
+    if (world.behaviour === "queue-full") return { execute: async () => QUEUE_FULL_RESPONSE() };
     return { execute: (request) => pearlAbyss(world, hostname, request) };
   };
 }

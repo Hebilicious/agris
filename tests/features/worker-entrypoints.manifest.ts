@@ -40,6 +40,7 @@ interface WorkerEntrypointsWorld {
   summaryBudgetBody?: SummaryBudgetResponse;
   summaryBudgetPearlAbyssRequests?: { readonly distinct: number; readonly total: number };
   recordedOperations?: readonly string[];
+  heldMarketRead?: Promise<Response>;
 }
 
 const summaryValueSchema = Schema.NullOr(
@@ -262,6 +263,37 @@ const steps: readonly StepDefinition<WorkerEntrypointsWorld>[] = [
   step("the plugin recorded the operation WorkerEntrypoints once", noStepArguments, (world) => {
     assert.deepEqual(world.recordedOperations, ["WorkerEntrypoints"]);
   }),
+  step(
+    "a market Worker whose coordinator runs one Pearl Abyss request at once while Pearl Abyss holds the first",
+    noStepArguments,
+    async (world) => {
+      await resetPearlAbyssObservation();
+      assert.equal((await pearlAbyssHold().fetch("https://pa-hold.internal/", { method: "DELETE" })).status, 204);
+      world.heldMarketRead = abortableMarketRead("20001");
+      await waitForPearlAbyssRequests(1);
+    },
+  ),
+  step("a second market read waits behind it and its caller gives up", noStepArguments, async () => {
+    const caller = new AbortController();
+    const second = abortableMarketRead("20002", caller.signal);
+    // A setup pause, not an assertion: it lets the second read reach the coordinator's queue before its caller leaves.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    caller.abort(new Error("The caller gave up"));
+    await Promise.allSettled([second]);
+  }),
+  step("the first is released and a third market read follows", noStepArguments, async (world) => {
+    assert.equal((await pearlAbyssHold().fetch("https://pa-hold.internal/", { method: "POST" })).status, 204);
+    const held = await required(world.heldMarketRead);
+    assert.equal(held.status, 200, await held.clone().text());
+    await held.body?.cancel();
+    // The coordinator sends in arrival order, so the third read's answer comes after anything still queued was sent.
+    const third = await abortableMarketRead("20003");
+    assert.equal(third.status, 200, await third.clone().text());
+    await third.body?.cancel();
+  }),
+  step("only the first and the third market reads reached Pearl Abyss", noStepArguments, async () => {
+    assert.deepEqual(await readPearlAbyssObservation(), { distinct: 2, total: 2 });
+  }),
   step("the response still carries the Pearl Abyss summary", noStepArguments, (world) => {
     assert.equal(requiredAgrisProxyResponse(world, 0).status, 200);
     const response = requiredRecord(world.gatewayBodies?.[0]);
@@ -463,6 +495,45 @@ function unlimitedMarket(): unknown {
 function localGateway(): Fetcher {
   // SAFETY: The Vitest Miniflare configuration owns and installs the LOCAL_GATEWAY service binding for this runtime.
   return (env as Cloudflare.Env & { readonly LOCAL_GATEWAY: Fetcher }).LOCAL_GATEWAY;
+}
+
+async function waitForPearlAbyssRequests(total: number): Promise<void> {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    if ((await readPearlAbyssObservation()).total >= total) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Pearl Abyss never received ${total} request(s)`);
+}
+
+/** One EU market summary read sent straight to the abortable market Worker, as the gateway's subgraph request. */
+function abortableMarketRead(itemId: string, signal?: AbortSignal): Promise<Response> {
+  return abortableMarket().fetch(
+    new Request("https://agris-market.internal/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: `{ market(region: EU, locale: EN) { items(ids: ["${itemId}"]) { basePrice } } }` }),
+      ...(signal === undefined ? {} : { signal }),
+    }),
+  );
+}
+
+function required<Value>(value: Value | undefined): Value {
+  assert.ok(value !== undefined);
+  return value;
+}
+
+interface TestFetcher {
+  fetch(request: Request): Promise<Response>;
+}
+
+function abortableMarket(): TestFetcher {
+  // SAFETY: The Vitest Miniflare configuration owns and installs the MARKET_ABORTABLE service binding for this runtime.
+  return (env as Cloudflare.Env & { readonly MARKET_ABORTABLE: TestFetcher }).MARKET_ABORTABLE;
+}
+
+function pearlAbyssHold(): TestBinding {
+  // SAFETY: The Vitest Miniflare configuration owns and installs the PA_HOLD service binding for this test runtime.
+  return (env as Cloudflare.Env & { readonly PA_HOLD: TestBinding }).PA_HOLD;
 }
 
 function pearlAbyssObserver(): TestBinding {

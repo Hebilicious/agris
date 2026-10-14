@@ -32,16 +32,19 @@ export class BudgetedMarketSubgraph extends WorkerEntrypoint<MarketEnv> {
 /**
  * One coordinator per Pearl Abyss host, placed by its name's location hint next to the server that answers it. It
  * admits each distinct upstream request once, within `PA_MAX_CONCURRENT_REQUESTS`, behind `PA_RATE_LIMITER` when bound.
+ *
+ * A caller's abort reaches it only when the Worker runs with the `enable_request_signal` compatibility flag; without
+ * it, a read whose caller gave up still waits its turn and is sent, until its 30-second deadline drops it.
  */
 export class PearlAbyssCoordinator extends DurableObject<MarketEnv> {
   private readonly coordination: PearlAbyssCoordination;
 
   public constructor(state: DurableObjectState, env: MarketEnv) {
     super(state, env);
-    this.coordination = new PearlAbyssCoordination(
-      maximumConcurrentRequestsFromBinding(env.PA_MAX_CONCURRENT_REQUESTS),
-      env.PA_RATE_LIMITER,
-    );
+    this.coordination = new PearlAbyssCoordination({
+      maximumConcurrentRequests: maximumConcurrentRequestsFromBinding(env.PA_MAX_CONCURRENT_REQUESTS),
+      limiter: env.PA_RATE_LIMITER,
+    });
   }
 
   public fetch(request: Request): Promise<Response> {

@@ -1,7 +1,10 @@
 import {
   createPearlAbyssMarketReader,
   PEARL_ABYSS_THROTTLE_RETRY_AFTER_SECONDS,
+  PearlAbyssCoordinatorDeadlineError,
+  PearlAbyssCoordinatorQueueFullError,
   PearlAbyssInFlightCoordinator,
+  pearlAbyssRequestKey,
   PearlAbyssUpstreamError,
   readPearlAbyssResponseBody,
   type PearlAbyssHttpPort,
@@ -39,8 +42,19 @@ import {
 
 const marketSubgraph = createMarketSubgraph();
 const PEARL_ABYSS_RATE_LIMIT_KEY = "central-market-pearl-abyss";
-const PEARL_ABYSS_REQUEST_TIMEOUT_MS = 30_000;
 const PEARL_ABYSS_FAILURE_HEADER = "X-Pearl-Abyss-Failure";
+
+/**
+ * How long a Pearl Abyss request may take. The market gives up on a read after it; a coordinator gives each distinct
+ * request the same from its arrival, its permit, its wait for a slot and its send included, and drops it after that.
+ */
+export const PEARL_ABYSS_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * How long a coordinator waits for a permit from its rate limiter. A permit that has not come by then is a refusal: a
+ * stalled rate limiter cannot hold the coordinator's queue.
+ */
+export const PEARL_ABYSS_PERMIT_TIMEOUT_MS = 5_000;
 
 /**
  * Where each region's coordinator runs, so its calls to Pearl Abyss start next to the server that answers them.
@@ -53,6 +67,9 @@ const PEARL_ABYSS_FAILURE_HEADER = "X-Pearl-Abyss-Failure";
  * applies only when an object is created, so the coordinator's name carries its hint: changing one here creates a
  * coordinator at the new location rather than leaving the old one where it was.
  */
+/** The Durable Object location hints the coordinators use, each one a `DurableObjectLocationHint`. */
+export type PearlAbyssCoordinatorLocation = "apac" | "enam" | "weur" | "wnam";
+
 export const PEARL_ABYSS_COORDINATOR_LOCATIONS = {
   EU: "weur",
   NA: "wnam",
@@ -66,17 +83,33 @@ export const PEARL_ABYSS_COORDINATOR_LOCATIONS = {
   CONSOLE_EU: "weur",
   CONSOLE_NA: "wnam",
   CONSOLE_ASIA: "apac",
-} as const satisfies Record<PearlAbyssRegion, DurableObjectLocationHint>;
+} as const satisfies Record<PearlAbyssRegion, PearlAbyssCoordinatorLocation>;
 
-export const COORDINATOR_LOCATION_BY_HOST: ReadonlyMap<string, DurableObjectLocationHint> = new Map(
+export const COORDINATOR_LOCATION_BY_HOST: ReadonlyMap<string, PearlAbyssCoordinatorLocation> = new Map(
   PEARL_ABYSS_REGIONS.map((region) => [region.host, PEARL_ABYSS_COORDINATOR_LOCATIONS[region.code]]),
 );
 
 /** The coordinator that serves one Pearl Abyss host: its object name, and where to create it. */
 export interface PearlAbyssCoordinatorAddress {
   readonly name: string;
-  readonly locationHint: DurableObjectLocationHint;
+  readonly locationHint: PearlAbyssCoordinatorLocation;
 }
+
+/**
+ * Distinct Pearl Abyss requests one coordinator lets wait, for the rate allowance or for an active slot, beyond the
+ * `PA_MAX_CONCURRENT_REQUESTS` it runs. Past it a distinct request fails at once as `upstream/queue-full`, so a flood
+ * of distinct reads cannot hold the coordinator's memory: a hundred waiting request bodies are a few megabytes at most.
+ * It is five minutes of the demo's allowance, more than a caller waits.
+ */
+export const MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS = 100;
+
+/**
+ * The distinct Pearl Abyss requests one coordinator runs at once when `PA_MAX_CONCURRENT_REQUESTS` is `0` or unset,
+ * which set no concurrency limit of their own. It keeps the work a coordinator holds finite, with up to
+ * `MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS` more waiting, and is far above the 300 requests the default rate allowance
+ * admits in 30 seconds.
+ */
+export const UNLIMITED_CONCURRENT_PEARL_ABYSS_REQUESTS = 1_000;
 
 /**
  * Address the coordinator for one Pearl Abyss host: `getByName(address.name, { locationHint: address.locationHint })`.
@@ -90,12 +123,16 @@ export function pearlAbyssCoordinatorAddress(hostname: string): PearlAbyssCoordi
 
 type CoordinatedPearlAbyssFailureCode = Extract<
   PearlAbyssUpstreamErrorCode,
-  "upstream/invalid-response" | "upstream/rate-limited"
+  "upstream/invalid-response" | "upstream/queue-full" | "upstream/rate-limited" | "upstream/timeout"
 >;
 
 type BufferedPearlAbyssResponse =
-  | { readonly kind: "failure"; readonly code: CoordinatedPearlAbyssFailureCode; readonly status: 429 | 502 }
+  | { readonly kind: "failure"; readonly code: CoordinatedPearlAbyssFailureCode; readonly status: 429 | 502 | 504 }
   | { readonly kind: "response"; readonly body: Uint8Array | null; readonly status: number };
+
+const RATE_LIMITED: BufferedPearlAbyssResponse = { kind: "failure", code: "upstream/rate-limited", status: 429 };
+const QUEUE_FULL: BufferedPearlAbyssResponse = { kind: "failure", code: "upstream/queue-full", status: 429 };
+const TIMED_OUT: BufferedPearlAbyssResponse = { kind: "failure", code: "upstream/timeout", status: 504 };
 
 /** The burst backstop the coordinator consults before each distinct upstream request. */
 export interface PearlAbyssRateLimiter {
@@ -106,9 +143,6 @@ export interface PearlAbyssRateLimiter {
 export interface PearlAbyssCoordinatorPort {
   execute(request: Request): Promise<Response>;
 }
-
-/** A concurrency ceiling high enough never to be reached: what `0` or no setting means. */
-const UNLIMITED_CONCURRENT_REQUESTS = Number.MAX_SAFE_INTEGER;
 
 const decodeConcurrency = Schema.decodeUnknownExit(
   Schema.Union([
@@ -121,60 +155,167 @@ const decodeConcurrency = Schema.decodeUnknownExit(
 
 /**
  * BOUNDARY: The `PA_MAX_CONCURRENT_REQUESTS` binding: how many distinct Pearl Abyss requests one coordinator runs at
- * once. Absent or `0` sets no limit; anything but a non-negative whole number, as a JSON number or text, throws.
+ * once. Absent or `0` sets no limit of its own, which runs up to `UNLIMITED_CONCURRENT_PEARL_ABYSS_REQUESTS`; anything
+ * but a non-negative whole number, as a JSON number or text, throws.
  */
 export function maximumConcurrentRequestsFromBinding(value: unknown): number {
-  if (value === undefined) return UNLIMITED_CONCURRENT_REQUESTS;
+  if (value === undefined) return UNLIMITED_CONCURRENT_PEARL_ABYSS_REQUESTS;
   const decoded = decodeConcurrency(value);
-  if (Exit.isFailure(decoded)) {
+  if (Exit.isFailure(decoded) || !Number.isSafeInteger(decoded.value)) {
     throw new RangeError("PA_MAX_CONCURRENT_REQUESTS must be a non-negative whole number, 0 for no limit");
   }
-  return decoded.value === 0 ? UNLIMITED_CONCURRENT_REQUESTS : decoded.value;
+  return decoded.value === 0 ? UNLIMITED_CONCURRENT_PEARL_ABYSS_REQUESTS : decoded.value;
+}
+
+/** The time a coordinator reads; the runtime's own unless a test supplies one. */
+export interface PearlAbyssCoordinatorClock {
+  /** Milliseconds since the epoch, as `Date.now()`. */
+  now(): number;
+  /** A signal that aborts `milliseconds` from now, as `AbortSignal.timeout`. */
+  timeout(milliseconds: number): AbortSignal;
+}
+
+const RUNTIME_CLOCK: PearlAbyssCoordinatorClock = {
+  now: () => Date.now(),
+  timeout: (milliseconds) => AbortSignal.timeout(milliseconds),
+};
+
+/** What a coordinator needs from its host: the market Worker's bindings, and how it reaches Pearl Abyss. */
+export interface PearlAbyssCoordinationOptions {
+  /** `PA_MAX_CONCURRENT_REQUESTS`, as `maximumConcurrentRequestsFromBinding` reads it. */
+  readonly maximumConcurrentRequests: number;
+  /** The `PA_RATE_LIMITER` binding; absent limits no rate. */
+  readonly limiter: PearlAbyssRateLimiter | undefined;
+  /** How the coordinator reaches Pearl Abyss; the runtime's `fetch` unless a test supplies one. */
+  readonly upstream?: ((request: Request) => Promise<Response>) | undefined;
+  /** The time the coordinator reads; the runtime's clock unless a test supplies one. */
+  readonly clock?: PearlAbyssCoordinatorClock | undefined;
+}
+
+/** Asks for one permit before a distinct request may wait for a slot; `false` refuses it. */
+type PearlAbyssPermit = (signal: AbortSignal) => Promise<boolean>;
+
+/**
+ * Permits from the rate limiter. A permit not granted within `PEARL_ABYSS_PERMIT_TIMEOUT_MS`, or before every caller of
+ * its request gave up, is refused.
+ */
+function limiterPermit(limiter: PearlAbyssRateLimiter, clock: PearlAbyssCoordinatorClock): PearlAbyssPermit {
+  return async (signal) => {
+    const outcome = await untilAborted(
+      limiter.limit({ key: PEARL_ABYSS_RATE_LIMIT_KEY }),
+      AbortSignal.any([signal, clock.timeout(PEARL_ABYSS_PERMIT_TIMEOUT_MS)]),
+    );
+    return outcome.success;
+  };
+}
+
+/** `pending`, or its signal's reason once `signal` aborts first, whether or not `pending` itself honours the signal. */
+function untilAborted<Value>(pending: Promise<Value>, signal: AbortSignal): Promise<Value> {
+  return new Promise<Value>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const abort = (): void => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
+}
+
+/** A distinct Pearl Abyss request as the coordinator holds it: read once, with no caller's signal attached. */
+interface DistinctPearlAbyssRequest {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Headers;
+  readonly body: string;
+}
+
+/** A request read for the coordinator: the key it is shared by, and its distinct form. */
+interface KeyedPearlAbyssRequest {
+  readonly key: string;
+  readonly request: DistinctPearlAbyssRequest;
+}
+
+async function keyedPearlAbyssRequest(request: Request): Promise<KeyedPearlAbyssRequest> {
+  const body = await request.text();
+  return {
+    key: await pearlAbyssRequestKey(request.url, body),
+    request: { url: request.url, method: request.method, headers: new Headers(request.headers), body },
+  };
 }
 
 /**
- * The work one coordinator instance does: admit each distinct upstream request once, within `maximumConcurrentRequests`,
- * and share its buffered answer with every matching request in flight. Without a limiter, nothing caps the rate.
+ * The work one coordinator does for its host: send each distinct upstream request once, within
+ * `maximumConcurrentRequests`, and share its buffered answer with every matching request in flight.
+ *
+ * Each distinct request asks the limiter before it waits for an active slot, so a refused one never queues, and at most
+ * `MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS` wait beyond the active ones. Each has `PEARL_ABYSS_REQUEST_TIMEOUT_MS` from its
+ * arrival, its permit and its wait included: past it, it leaves the queue or its upstream call is cancelled, and it
+ * fails as `upstream/timeout`. A caller that gives up stops only its own wait; the request leaves the queue, or its
+ * upstream call is cancelled, once every caller sharing it has given up. Without a limiter, nothing caps the rate.
  */
 export class PearlAbyssCoordination implements PearlAbyssCoordinatorPort {
-  private readonly requests: PearlAbyssInFlightCoordinator<Request, BufferedPearlAbyssResponse>;
-  private readonly limiter: PearlAbyssRateLimiter | undefined;
+  private readonly requests: PearlAbyssInFlightCoordinator<DistinctPearlAbyssRequest, BufferedPearlAbyssResponse>;
+  private readonly permit: PearlAbyssPermit | undefined;
+  private readonly upstream: (request: Request) => Promise<Response>;
 
-  public constructor(maximumConcurrentRequests: number, limiter: PearlAbyssRateLimiter | undefined) {
-    this.limiter = limiter;
-    this.requests = new PearlAbyssInFlightCoordinator(maximumConcurrentRequests, (request) =>
-      this.fetchDistinct(request),
+  public constructor(options: PearlAbyssCoordinationOptions) {
+    const clock = options.clock ?? RUNTIME_CLOCK;
+    this.permit = options.limiter === undefined ? undefined : limiterPermit(options.limiter, clock);
+    this.upstream = options.upstream ?? ((request) => fetch(request));
+    this.requests = new PearlAbyssInFlightCoordinator(
+      {
+        maximumActiveRequests: options.maximumConcurrentRequests,
+        maximumQueuedRequests: MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS,
+      },
+      {
+        admit: (_request, signal) => this.admit(signal),
+        send: (request, signal) => this.send(request, signal),
+        deadline: () => clock.timeout(PEARL_ABYSS_REQUEST_TIMEOUT_MS),
+      },
     );
   }
 
-  public async execute(request: Request): Promise<Response> {
-    const key = `${request.url}\n${await request.clone().text()}`;
-    const response = await this.requests.execute(key, request);
-    if (response.kind === "failure") {
-      return new Response(null, {
-        status: response.status,
-        headers: { [PEARL_ABYSS_FAILURE_HEADER]: response.code },
-      });
-    }
-    const body = response.body === null ? null : response.body.slice();
-    return new Response(body, {
-      status: response.status,
-      headers: body === null ? undefined : { "Content-Length": String(body.byteLength) },
+  public execute(request: Request): Promise<Response> {
+    return this.share(request).then(coordinatorResponse, (error: unknown) => {
+      if (error instanceof PearlAbyssCoordinatorQueueFullError) return coordinatorResponse(QUEUE_FULL);
+      if (error instanceof PearlAbyssCoordinatorDeadlineError) return coordinatorResponse(TIMED_OUT);
+      throw error;
     });
   }
 
-  private async fetchDistinct(request: Request): Promise<BufferedPearlAbyssResponse> {
-    if (this.limiter !== undefined) {
-      let permit: { readonly success: boolean };
-      try {
-        permit = await this.limiter.limit({ key: PEARL_ABYSS_RATE_LIMIT_KEY });
-      } catch {
-        return { kind: "failure", code: "upstream/rate-limited", status: 429 };
-      }
-      if (!permit.success) return { kind: "failure", code: "upstream/rate-limited", status: 429 };
-    }
+  /**
+   * Hands the read request to the in-flight coordinator and returns at once, so this frame keeps neither the request
+   * nor its body while the answer is pending: only the first caller of a key leaves its body with the coordinator.
+   */
+  private async share(request: Request): Promise<BufferedPearlAbyssResponse> {
+    const signal = request.signal;
+    const keyed = await keyedPearlAbyssRequest(request);
+    return this.requests.execute(keyed.key, keyed.request, signal);
+  }
 
-    const response = await fetch(request);
+  private async admit(signal: AbortSignal): Promise<BufferedPearlAbyssResponse | undefined> {
+    if (this.permit === undefined) return undefined;
+    try {
+      return (await this.permit(signal)) ? undefined : RATE_LIMITED;
+    } catch {
+      return RATE_LIMITED;
+    }
+  }
+
+  private async send(request: DistinctPearlAbyssRequest, signal: AbortSignal): Promise<BufferedPearlAbyssResponse> {
+    const response = await this.upstream(
+      new Request(request.url, { method: request.method, headers: request.headers, body: request.body, signal }),
+    );
     if (response.status < 200 || response.status >= 300) {
       await cancelResponseBody(response.body);
       return { kind: "response", status: response.status, body: null };
@@ -196,6 +337,18 @@ export class PearlAbyssCoordination implements PearlAbyssCoordinatorPort {
       throw error;
     }
   }
+}
+
+/** The coordinator's answer to one caller: its own copy of the shared body, or a failure the market reads back. */
+function coordinatorResponse(response: BufferedPearlAbyssResponse): Response {
+  if (response.kind === "failure") {
+    return new Response(null, { status: response.status, headers: { [PEARL_ABYSS_FAILURE_HEADER]: response.code } });
+  }
+  const body = response.body === null ? null : response.body.slice();
+  return new Response(body, {
+    status: response.status,
+    headers: body === null ? {} : { "Content-Length": String(body.byteLength) },
+  });
 }
 
 /** The answer to the local runtimes' readiness probe, or `null` for every other request. */
@@ -285,8 +438,12 @@ function coordinatorFailure(value: string | null): PearlAbyssUpstreamError | nul
   switch (value) {
     case "upstream/invalid-response":
       return new PearlAbyssUpstreamError(value, "Pearl Abyss coordinator rejected an invalid response");
+    case "upstream/queue-full":
+      return new PearlAbyssUpstreamError(value, "Pearl Abyss coordinator queue is full");
     case "upstream/rate-limited":
       return new PearlAbyssUpstreamError(value, "Pearl Abyss request rate limited");
+    case "upstream/timeout":
+      return new PearlAbyssUpstreamError(value, "Pearl Abyss request timed out in the coordinator");
     default:
       return null;
   }

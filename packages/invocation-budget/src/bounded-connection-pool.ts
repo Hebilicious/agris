@@ -13,11 +13,28 @@ export class BoundedConnectionPool {
     }
   }
 
-  public async acquire(): Promise<ConnectionLease> {
+  /**
+   * Take a permit, waiting in FIFO order while every permit is held. A waiter whose `signal` aborts leaves the queue
+   * and rejects with the signal's reason, so abandoned work never holds a place in line.
+   */
+  public async acquire(signal?: AbortSignal): Promise<ConnectionLease> {
+    signal?.throwIfAborted();
     if (this.active < this.maximum) {
       this.active += 1;
     } else {
-      await new Promise<void>((resolve) => this.waiters.push(resolve));
+      await new Promise<void>((resolve, reject) => {
+        const leave = (): void => {
+          const index = this.waiters.indexOf(grant);
+          if (index !== -1) this.waiters.splice(index, 1);
+          reject(signal?.reason);
+        };
+        const grant = (): void => {
+          signal?.removeEventListener("abort", leave);
+          resolve();
+        };
+        this.waiters.push(grant);
+        signal?.addEventListener("abort", leave, { once: true });
+      });
     }
     return new BoundedConnectionLease(() => this.release());
   }
