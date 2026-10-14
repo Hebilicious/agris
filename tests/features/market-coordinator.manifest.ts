@@ -13,10 +13,8 @@ import {
 import {
   maximumConcurrentRequestsFromBinding,
   MAXIMUM_QUEUED_PEARL_ABYSS_REQUESTS,
-  PEARL_ABYSS_ALLOWANCE_ADDRESS,
   pearlAbyssCoordinatorAddress,
   PearlAbyssCoordinatorObject,
-  type PearlAbyssCoordinatorAddress,
   type PearlAbyssCoordinatorClock,
   type PearlAbyssCoordinatorLocation,
   type PearlAbyssCoordinatorPort,
@@ -46,14 +44,15 @@ interface MarketCoordinatorWorld {
   answers?: readonly string[];
   abandoned?: readonly AbortController[];
   clock?: FakeClock;
-  permitSignals?: AbortSignal[];
+  /** One release per pending permit of a rate limiter that answers only when released. */
+  permits?: (() => void)[];
   inFlight?: PearlAbyssInFlightCoordinator<string, string>;
   releaseAdmission?: () => void;
 }
 
 const steps: readonly StepDefinition<MarketCoordinatorWorld>[] = [
   step(
-    "a deployment whose Pearl Abyss rate limit admits {int} request per period, counted per Cloudflare location",
+    "a deployment whose Pearl Abyss rate limit admits {int} request per period per region, counted per Cloudflare location",
     integerStepArgument,
     (world, limit) => {
       world.limit = limit;
@@ -64,14 +63,39 @@ const steps: readonly StepDefinition<MarketCoordinatorWorld>[] = [
       });
     },
   ),
-  step("the EU and NA coordinators each receive a distinct Pearl Abyss request", noStepArguments, async (world) => {
+  step("the EU coordinator spends its rate limit on a distinct Pearl Abyss request", noStepArguments, async (world) => {
+    const upstream = required(world.upstream);
+    const coordinator = required(world.coordinatorFor)(hostOf("EU"));
+    const responses: Response[] = [];
+    for (let index = 0; index < required(world.limit); index += 1) {
+      responses.push(await coordinator.execute(pearlAbyssRequest("EU", String(10_000 + index))));
+    }
+    world.failures = responses.map((response) => response.headers.get(FAILURE_HEADER));
+    assert.deepEqual(
+      world.failures,
+      responses.map(() => null),
+    );
+    assert.equal(upstream.requests.length, responses.length);
+  }),
+  step("the NA and MENA coordinators each receive a distinct Pearl Abyss request", noStepArguments, async (world) => {
     const coordinatorFor = required(world.coordinatorFor);
     const responses = await Promise.all(
-      (["EU", "NA"] as const).map((region) =>
-        coordinatorFor(hostOf(region)).execute(pearlAbyssRequest(region, "10006")),
+      (["NA", "MENA"] as const).map((region) =>
+        coordinatorFor(hostOf(region)).execute(pearlAbyssRequest(region, "20006")),
       ),
     );
-    world.failures = responses.map((response) => response.headers.get(FAILURE_HEADER));
+    world.failures = [...(world.failures ?? []), ...responses.map((response) => response.headers.get(FAILURE_HEADER))];
+  }),
+  step("the EU coordinator receives another distinct Pearl Abyss request", noStepArguments, async (world) => {
+    const response = await required(world.coordinatorFor)(hostOf("EU")).execute(pearlAbyssRequest("EU", "20006"));
+    world.failures = [...(world.failures ?? []), response.headers.get(FAILURE_HEADER)];
+  }),
+  step("{int} requests reach Pearl Abyss and none fails as rate limited", integerStepArgument, (world, count) => {
+    assert.deepEqual(
+      world.failures,
+      Array.from({ length: count }, () => null),
+    );
+    assert.equal(required(world.upstream).requests.length, count);
   }),
   step("{int} request reaches Pearl Abyss and the other fails as rate limited", integerStepArgument, (world, count) => {
     assert.equal(required(world.upstream).requests.length, count);
@@ -259,17 +283,24 @@ const steps: readonly StepDefinition<MarketCoordinatorWorld>[] = [
     },
   ),
 
-  step("a deployment whose Pearl Abyss rate allowance never answers", noStepArguments, (world) => {
+  step("a coordinator whose Pearl Abyss rate limiter answers only when released", noStepArguments, (world) => {
+    const pending: (() => void)[] = [];
+    world.permits = pending;
     world.upstream = new FakeUpstream();
     world.coordinatorFor = deployment(world, world.upstream, {
       maximumConcurrentRequests: 6,
-      limiterAt: () => ({ limit: () => new Promise<never>(() => {}) }),
+      limiterAt: () => ({
+        limit: () =>
+          new Promise<{ readonly success: boolean }>((resolve) => {
+            pending.push(() => resolve({ success: true }));
+          }),
+      }),
     });
   }),
   step("a distinct request waits {int} seconds for its permit", integerStepArgument, async (world, seconds) => {
     const call = track(required(world.coordinatorFor)(hostOf("EU")).execute(pearlAbyssRequest("EU", "10006")));
     world.calls = [call];
-    await waitFor(() => required(world.permitSignals).length === 1);
+    await waitFor(() => required(world.permits).length === 1);
     required(world.clock).advance(seconds * 1_000);
     await waitFor(() => call.settled);
   }),
@@ -286,14 +317,17 @@ const steps: readonly StepDefinition<MarketCoordinatorWorld>[] = [
       const call = track(
         required(world.coordinatorFor)(hostOf("EU")).execute(pearlAbyssRequest("EU", "10006", caller.signal)),
       );
-      await waitFor(() => required(world.permitSignals).length === 1);
+      world.calls = [call];
+      await waitFor(() => required(world.permits).length === 1);
       caller.abort(new Error("The caller gave up"));
       await waitFor(() => call.settled);
     },
   ),
-  step("the permit request is abandoned too", noStepArguments, async (world) => {
-    const [permit] = required(world.permitSignals);
-    await waitFor(() => required(permit).aborted);
+  step("the rate limiter then admits it", noStepArguments, async (world) => {
+    for (const admit of required(world.permits)) admit();
+    await settle();
+  }),
+  step("it never reaches Pearl Abyss", noStepArguments, (world) => {
     assert.equal(required(world.upstream).requests.length, 0);
   }),
 
@@ -369,37 +403,6 @@ const steps: readonly StepDefinition<MarketCoordinatorWorld>[] = [
       await Promise.allSettled(calls.map((call) => call.response));
     }
   }),
-
-  step("a deployment whose Pearl Abyss rate allowance refuses every permit", noStepArguments, (world) => {
-    world.upstream = new FakeUpstream();
-    world.coordinatorFor = deployment(world, world.upstream, {
-      maximumConcurrentRequests: 6,
-      limiterAt: perLocationLimiter(0),
-    });
-  }),
-  step(
-    "three distinct requests arrive, the third one second after the first was refused",
-    noStepArguments,
-    async (world) => {
-      const coordinator = required(world.coordinatorFor)(hostOf("EU"));
-      const responses = [
-        await coordinator.execute(pearlAbyssRequest("EU", "1")),
-        await coordinator.execute(pearlAbyssRequest("EU", "2")),
-      ];
-      required(world.clock).advance(1_000);
-      responses.push(await coordinator.execute(pearlAbyssRequest("EU", "3")));
-      world.failures = responses.map((response) => response.headers.get(FAILURE_HEADER));
-    },
-  ),
-  step(
-    "all three fail as rate limited and only the first and the third asked the allowance",
-    noStepArguments,
-    (world) => {
-      assert.deepEqual(world.failures, ["upstream/rate-limited", "upstream/rate-limited", "upstream/rate-limited"]);
-      assert.equal(required(world.permitSignals).length, 2);
-      assert.equal(required(world.upstream).requests.length, 0);
-    },
-  ),
 ];
 
 export const marketCoordinatorFeature: ExecutableFeatureManifest<MarketCoordinatorWorld> = {
@@ -453,9 +456,9 @@ class FakeUpstream {
 }
 
 /**
- * Every coordinator object of one deployment, addressed as the market Worker addresses them. Each object gets the
- * limiter of the location it runs in, as a `PA_RATE_LIMITER` binding behaves there. They all read one clock, which
- * moves only when a step advances it (`world.clock`), and every permit request's signal lands in `world.permitSignals`.
+ * Every coordinator of one deployment, addressed as the market Worker addresses them: one per Pearl Abyss host, at its
+ * location hint. Each coordinator gets the limiter of the location it runs in, as a `PA_RATE_LIMITER` binding behaves
+ * there. They all read one clock, which moves only when a step advances it (`world.clock`).
  */
 function deployment(
   world: MarketCoordinatorWorld,
@@ -466,32 +469,21 @@ function deployment(
   },
 ): (hostname: string) => PearlAbyssCoordinatorPort {
   const clock = new FakeClock();
-  const permitSignals: AbortSignal[] = [];
   world.clock = clock;
-  world.permitSignals = permitSignals;
-  const objects = new Map<string, PearlAbyssCoordinatorPort>();
-  const objectAt = (address: PearlAbyssCoordinatorAddress): PearlAbyssCoordinatorPort => {
-    const existing = objects.get(address.name);
+  const coordinators = new Map<string, PearlAbyssCoordinatorPort>();
+  return (hostname) => {
+    const address = pearlAbyssCoordinatorAddress(hostname);
+    const existing = coordinators.get(address.name);
     if (existing !== undefined) return existing;
     const created = new PearlAbyssCoordinatorObject({
       maximumConcurrentRequests: options.maximumConcurrentRequests,
       limiter: options.limiterAt(address.locationHint),
-      allowance: () => {
-        const allowance = objectAt(PEARL_ABYSS_ALLOWANCE_ADDRESS);
-        return {
-          execute: (request) => {
-            permitSignals.push(request.signal);
-            return allowance.execute(request);
-          },
-        };
-      },
       upstream: upstream.fetch,
       clock,
     });
-    objects.set(address.name, created);
+    coordinators.set(address.name, created);
     return created;
   };
-  return (hostname) => objectAt(pearlAbyssCoordinatorAddress(hostname));
 }
 
 /** A clock that stands still until a step advances it; each timeout aborts once the clock reaches it. */

@@ -2,7 +2,6 @@ import type { InvocationBudgetReservation, MarketSummaryReservation } from "@agr
 import {
   executeMarketSubgraph,
   maximumConcurrentRequestsFromBinding,
-  PEARL_ABYSS_ALLOWANCE_ADDRESS,
   pearlAbyssCoordinatorAddress,
   PearlAbyssCoordinatorObject,
   readinessResponse,
@@ -36,8 +35,8 @@ const PEARL_ABYSS_COORDINATOR = "PearlAbyssCoordinator";
  * or its upstream call is cancelled, once every caller sharing it has given up. Whether or not anyone is still
  * waiting, each distinct request has `PEARL_ABYSS_REQUEST_TIMEOUT_MS` from its arrival before the coordinator drops it,
  * and each permit `PEARL_ABYSS_PERMIT_TIMEOUT_MS` before it counts as refused. It reads `PA_MAX_CONCURRENT_REQUESTS`
- * and, when bound, `PA_RATE_LIMITER` from the market Worker's environment, which `props.ts` declares; only the object at
- * `PEARL_ABYSS_ALLOWANCE_ADDRESS` consults the limiter, for every host.
+ * and, when bound, `PA_RATE_LIMITER` from the market Worker's environment, which `props.ts` declares, and counts the rate
+ * for its own host alone (`pearlAbyssRateLimitKey`).
  */
 export class PearlAbyssCoordinator extends Cloudflare.DurableObject<PearlAbyssCoordinator>()(
   PEARL_ABYSS_COORDINATOR,
@@ -49,10 +48,6 @@ export class PearlAbyssCoordinator extends Cloudflare.DurableObject<PearlAbyssCo
       const coordinator = new PearlAbyssCoordinatorObject({
         maximumConcurrentRequests: maximumConcurrentRequestsFromBinding(env.PA_MAX_CONCURRENT_REQUESTS),
         limiter: rateLimiterOf(env.PA_RATE_LIMITER),
-        allowance: () => {
-          const { name, locationHint } = PEARL_ABYSS_ALLOWANCE_ADDRESS;
-          return coordinatorPort(coordinatorNamespace(env).getByName(name, { locationHint }));
-        },
       });
       return {
         fetch: Effect.gen(function* () {

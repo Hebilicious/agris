@@ -27,10 +27,15 @@ Feature: Central Market Worker entrypoints
     When the real Agris Proxy queries two market items through a market Worker that binds neither PA_RATE_LIMITER nor PA_MAX_CONCURRENT_REQUESTS
     Then both market items come back with their Pearl Abyss summary
 
-  @scenario:worker-entrypoints-deployment-rate-allowance @provenance:spec @i1
-  Scenario: The coordinators of every Pearl Abyss host spend one rate allowance for the whole deployment
-    When the real Agris Proxy queries an EU and an NA market item through a market Worker whose PA_RATE_LIMITER admits 1 request per period
-    Then 1 Pearl Abyss request was sent and only one of the market items carries its Pearl Abyss summary
+  @scenario:worker-entrypoints-region-rate-limits-are-separate @provenance:spec @i1
+  Scenario: A region that has spent its Pearl Abyss rate limit does not throttle another region
+    When the real Agris Proxy queries an EU market item and then an NA market item through a market Worker whose PA_RATE_LIMITER admits 1 request per period
+    Then 2 Pearl Abyss requests were sent and both market items carry their Pearl Abyss summary
+
+  @scenario:worker-entrypoints-region-rate-limit-holds @provenance:spec @i1
+  Scenario: A region beyond its own Pearl Abyss rate limit is refused
+    When the real Agris Proxy queries two ASIA market items, one after the other, through a market Worker whose PA_RATE_LIMITER admits 1 request per period
+    Then 1 Pearl Abyss request was sent and the second answer is an uncached HTTP 429 with Retry-After
 
   @scenario:worker-entrypoints-gateway-plugins @provenance:spec @i1
   Scenario: An Envelop plugin on the gateway's extension point sees each executed operation

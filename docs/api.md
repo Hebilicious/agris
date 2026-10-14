@@ -117,6 +117,7 @@ Pearl Abyss returns one ambiguous answer for both "unknown item" and "no market 
 | Rate limit, self-hosted gateway    | 60 per minute per IP (an IPv6 /64), per Cloudflare location, every path                                        |
 | Rate limit, shared demo            | 10 per minute per IP and 120 in all, per Cloudflare location; 10 Central Market reads per minute per IP, exact |
 | Pearl Abyss concurrency (per host) | 6 active requests, up to 100 more queued                                                                       |
+| Pearl Abyss rate (per region)      | 100 requests per 10 seconds, 1,200 across the 12 regions                                                       |
 | Pearl Abyss request timeout        | 30 seconds, time waiting in the queue included                                                                 |
 
 These are the defaults. A deployment can change or turn off the depth, field and alias limits (`QUERY_MAX_*`), change or turn off both rate limits, change the Pearl Abyss concurrency, and change the subrequest budget; [deploy.md](deploy.md#configuration) lists every setting.
@@ -145,7 +146,7 @@ The gateway's cache settings are plain-text variables, one per value, and every 
 
 Every number is a whole number of seconds, zero or more, and every never-stored coordinate a field of the client schema. The gateway refuses any other value, and any `CACHE_` variable it does not know, with an error instead of falling back to the defaults.
 
-The shared demo sets `CACHE_MINIMUM_SECONDS=600`, so every window in this table is at least 10 minutes there. Its market Worker also runs at most 2 Pearl Abyss requests at once per Pearl Abyss host, and at most 20 per minute across every host.
+The shared demo sets `CACHE_MINIMUM_SECONDS=600`, so every window in this table is at least 10 minutes there. Its market Worker also runs at most 2 Pearl Abyss requests at once per Pearl Abyss host, and at most 20 per minute per Pearl Abyss region, 240 per minute across the 12 regions.
 
 Headers that describe caching:
 
