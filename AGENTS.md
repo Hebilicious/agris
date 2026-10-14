@@ -43,6 +43,16 @@ Every operation is a moon task; run them as `moon run <project>:<task>`. Toolcha
 
 Deploy tasks (`agris:deploy`, `agris:demo-deploy`, `agris:docs-deploy`, `infra:*-deploy`, `infra:destroy`, `infra:smoke-destroy`, `smoke:smoke`) change a live Cloudflare account: run them only when the user asks.
 
+## Workflow
+
+- Every issue or task gets its own branch from `main`, checked out in a new worktree under `.worktrees/` (`git worktree add .worktrees/<name> -b <branch> main`), and all its work happens with that worktree as the working directory. Do not work directly on `main` unless the user explicitly directs the current session to. When spawning a subagent, state whether it shares the parent's branch and worktree or give it its own, and start it there; a subagent never infers this.
+- A session's files belong to its worktree, and the main checkout keeps the contents it had: scratch scripts, logs and screenshots go under `.artifacts/` in the task worktree, or into the commit when they are review evidence.
+- Every change reaches `main` through a GitHub pull request, opened before the first handoff with `gh pr create --base main --head <branch>`. A task has exactly one pull request, or one stack of them, and every handoff links it.
+- Use `gh stack` whenever the work splits into layers a reviewer can read one at a time, and always for a change too large for one pull request: one branch and pull request per layer, all in the task's worktree, submitted with `gh stack submit`. [.agents/skills/gh-stack/SKILL.md](.agents/skills/gh-stack/SKILL.md) covers the commands; it is upstream's skill from `github/gh-stack` v0.2.1, kept byte-identical and excluded from oxfmt.
+- A human reviews every pull request before it merges. Merge only after the human accepts the handed-off work, or when their current message explicitly says to merge without review; a request for changes, approval of a plan, or an instruction given before the work exists is not acceptance.
+- `main` refuses direct and force pushes and takes squash merges only: `gh pr merge <number> --squash`, or `gh stack merge --squash` for a stack. The squashed commit's subject is the pull request title, so the title follows the commit format under Conventions.
+- The author of a branch owns it until it merges: keep it rebased on `main`, resolve its conflicts and make its CI pass, including the semantic-commit checks. Never fix another session's branch to get yours in, and never advance `main` by hand.
+
 ## Conventions
 
 - TypeScript only, strict, with no `any` or `@ts-ignore`. The site is `.astro` components with TypeScript frontmatter and scripts, and no UI framework.
