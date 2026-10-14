@@ -5,7 +5,7 @@ import { PEARL_ABYSS_ITEM_LOCALE_DESCRIPTIONS, type PearlAbyssItemLocale } from 
 import DirectivePlugin from "@pothos/plugin-directives";
 import FederationPlugin from "@pothos/plugin-federation";
 import { GraphQLError } from "graphql";
-import { createYoga } from "graphql-yoga";
+import { createYoga, maskError as maskWithYoga } from "graphql-yoga";
 
 export {
   catalogArtifactMetadata,
@@ -18,6 +18,7 @@ export {
 import { catalogArtifactMetadata, catalogItem, catalogItemAt } from "./catalog.js";
 import {
   catalogItemNameSearch,
+  type CatalogItemNameSearch,
   type CatalogItemNameSearchExecution,
   type CatalogItemNameSearchFailure,
 } from "./item-name-search.js";
@@ -89,6 +90,8 @@ export interface CatalogSearchClock {
 export interface CatalogSubgraphInput {
   readonly searchTelemetry?: CatalogSearchTelemetry;
   readonly searchClock?: CatalogSearchClock;
+  /** The item-name search over the bundled artifact; tests replace it to make a search fail. */
+  readonly itemNameSearch?: CatalogItemNameSearch;
 }
 
 interface CatalogItemView {
@@ -126,6 +129,7 @@ export function createCatalogSubgraph(input: CatalogSubgraphInput = {}): Catalog
   const schema = createCatalogSchema({
     searchTelemetry: input.searchTelemetry ?? defaultSearchTelemetry,
     searchClock: input.searchClock ?? defaultSearchClock,
+    itemNameSearch: input.itemNameSearch ?? catalogItemNameSearch,
   });
   const yoga = createYoga({
     schema,
@@ -133,7 +137,7 @@ export function createCatalogSubgraph(input: CatalogSubgraphInput = {}): Catalog
     graphiql: false,
     landingPage: false,
     logging: false,
-    maskedErrors: false,
+    maskedErrors: { maskError: maskCatalogError },
   });
   return {
     schema,
@@ -145,6 +149,52 @@ export function createCatalogSubgraph(input: CatalogSubgraphInput = {}): Catalog
 interface CatalogSchemaInput {
   readonly searchTelemetry: CatalogSearchTelemetry;
   readonly searchClock: CatalogSearchClock;
+  readonly itemNameSearch: CatalogItemNameSearch;
+}
+
+const INTERNAL_ERROR_MESSAGE = "The catalog subgraph could not answer this field.";
+
+/**
+ * The errors `badUserInput` made. The mask recognizes them by identity rather than by class, because graphql-js can
+ * wrap an error in a `GraphQLError` from another copy of graphql than the one this module imports.
+ */
+const CATALOG_ERRORS = new WeakSet<Error>();
+
+/** A query mistake a caller may read: its message says what to change. */
+function badUserInput(message: string): GraphQLError {
+  const error = new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
+  CATALOG_ERRORS.add(error);
+  return error;
+}
+
+/** An item ID from the caller, or a `BAD_USER_INPUT` error that says what is wrong with it. */
+function clientItemId(value: string): number {
+  try {
+    return positiveItemId(value);
+  } catch (error: unknown) {
+    if (error instanceof TypeError) throw badUserInput(error.message);
+    throw error;
+  }
+}
+
+/**
+ * The catalog subgraph's error mask. An error from `badUserInput` passes, wherever graphql-js wrapped it. Everything
+ * else goes through Yoga's own mask, which passes the errors graphql-js raises about the request itself (they describe
+ * only the public schema) and replaces any other with `INTERNAL_SERVER_ERROR` and one fixed message, keeping its
+ * location and path. It never adds the original error, whatever `NODE_ENV` says.
+ */
+function maskCatalogError(error: unknown): Error {
+  if (wrapsCatalogError(error)) return error;
+  return maskWithYoga(error, INTERNAL_ERROR_MESSAGE, false);
+}
+
+function wrapsCatalogError(error: unknown): error is Error {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (CATALOG_ERRORS.has(current)) return true;
+    current = "originalError" in current ? current.originalError : undefined;
+  }
+  return false;
 }
 
 function createCatalogSchema(input: CatalogSchemaInput) {
@@ -193,7 +243,7 @@ function createCatalogSchema(input: CatalogSchemaInput) {
   builder.asEntity(ItemRef, {
     key: builder.selection<ItemReference>("id locale"),
     resolveReference: (reference) => {
-      const itemId = positiveItemId(reference.id);
+      const itemId = clientItemId(reference.id);
       return catalogItemView(reference.locale, itemId);
     },
   });
@@ -214,7 +264,7 @@ function createCatalogSchema(input: CatalogSchemaInput) {
           }),
         },
         resolve: (_root, arguments_) => {
-          const itemId = positiveItemId(arguments_.id);
+          const itemId = clientItemId(arguments_.id);
           const locale = arguments_.locale ?? "EN";
           const item = catalogItem(locale, itemId);
           return item === null ? null : catalogItemView(locale, itemId, item.name, item.grade);
@@ -235,7 +285,7 @@ function createCatalogSchema(input: CatalogSchemaInput) {
           }),
         },
         resolve: (_root, arguments_) => {
-          const itemIds = arguments_.ids.map(positiveItemId);
+          const itemIds = arguments_.ids.map(clientItemId);
           const locale = arguments_.locale ?? "EN";
           return itemIds.map((itemId) => catalogItemView(locale, itemId));
         },
@@ -265,7 +315,7 @@ function createCatalogSchema(input: CatalogSchemaInput) {
           const startedAt = readSearchClock(input.searchClock);
           let execution: CatalogItemNameSearchExecution;
           try {
-            execution = catalogItemNameSearch.searchWithMetrics({
+            execution = input.itemNameSearch.searchWithMetrics({
               locale: arguments_.locale,
               query: arguments_.query,
               first: arguments_.first ?? 50,
@@ -341,7 +391,7 @@ function badSearchInput(failure: CatalogItemNameSearchFailure): GraphQLError {
     failure.code === "QUERY_LENGTH_OUT_OF_RANGE"
       ? `Folded Item Name query length must be between ${failure.minimum} and ${failure.maximum} code points`
       : `first must be between ${failure.minimum} and ${failure.maximum}`;
-  return new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
+  return badUserInput(message);
 }
 
 function searchTelemetryBase(

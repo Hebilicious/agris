@@ -201,7 +201,10 @@ function gatewayRuntimeFor(plugins: readonly GatewayPlugin[]): ReturnType<typeof
     graphiql: false,
     landingPage: false,
     logging: false,
-    maskedErrors: true,
+    // Masks errors the gateway itself throws. A subgraph's errors pass as the subgraph wrote them, so each subgraph
+    // masks its own: the market subgraph lets only its closed set of codes and messages out. `isDev: false` keeps the
+    // original error and its stack out of the answer even where NODE_ENV says development, as Yoga would otherwise.
+    maskedErrors: { isDev: false },
     transports: { http: httpTransport },
     plugins: () => [useCustomFetch((url, init, context) => subgraphExecutionOf(context).fetch(url, init)), ...plugins],
   });

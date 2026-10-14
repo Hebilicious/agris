@@ -8,6 +8,8 @@
     "features/worker-entrypoints.worker-runtime.test.ts",
     "features/public-gateway.manifest.ts",
     "features/public-gateway.worker-runtime.test.ts",
+    "features/market-error-semantics.manifest.ts",
+    "features/market-error-semantics.integration.test.ts",
     "../apps/gateway/src/public.ts",
     "../apps/gateway/src/index.ts",
     "../apps/gateway/worker-env.d.ts",

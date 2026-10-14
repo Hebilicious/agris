@@ -29,6 +29,8 @@
     "features/worker-entrypoints.manifest.ts",
     "features/worker-entrypoints.worker-runtime.test.ts",
     "features/public-gateway.manifest.ts",
-    "features/public-gateway.worker-runtime.test.ts"
+    "features/public-gateway.worker-runtime.test.ts",
+    "features/market-error-semantics.manifest.ts",
+    "features/market-error-semantics.integration.test.ts"
   ]
 }
