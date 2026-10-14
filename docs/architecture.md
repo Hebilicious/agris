@@ -44,7 +44,7 @@ Each request carries an invocation budget (`@agris/invocation-budget`): `SUBREQU
 | `default`          | none    | The public HTTP handler, and the entrypoint a host binds when it wants no caching |
 | `CachedAgrisProxy` | enabled | Execution behind Cloudflare's cache; the gateway reaches it through `ctx.exports` |
 
-`src/local.ts` exports the same entrypoints for local development, with the catalog served inline instead of over a binding.
+`src/local.ts` exports the same entrypoints for local development, with the catalog served inline instead of over a binding; it reads `SUBREQUEST_LIMIT` and the `CACHE_*` settings as the deployed gateway does.
 
 ### Embedding Agris in your Cloudflare app
 

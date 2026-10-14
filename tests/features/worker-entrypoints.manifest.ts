@@ -270,6 +270,40 @@ const steps: readonly StepDefinition<WorkerEntrypointsWorld>[] = [
     assert.ok(Array.isArray(market.items));
     assert.equal(requiredRecord(market.items[0]).basePrice, 377_000);
   }),
+  step(
+    "the local gateway reads an item's NA and EU market summaries with SUBREQUEST_LIMIT 3 and CACHE_NEVER_STORED naming Item.marketSummary",
+    noStepArguments,
+    async (world) => {
+      const response = await localGateway().fetch(
+        new Request(GRAPHQL_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query:
+              'query LocalGateway { item(id: "10006", locale: EN) { na: marketSummary(region: NA) { basePrice } eu: marketSummary(region: EU) { basePrice } } }',
+          }),
+        }),
+      );
+      world.gatewayResponses = [response];
+      world.gatewayBodies = [await response.clone().json()];
+    },
+  ),
+  step("one summary has data and the other reports QUERY_BUDGET_EXCEEDED", noStepArguments, (world) => {
+    assert.equal(requiredAgrisProxyResponse(world, 0).status, 200);
+    const body = requiredRecord(world.gatewayBodies?.[0]);
+    const item = requiredRecord(requiredRecord(body.data).item);
+    const summaries = [item.na, item.eu];
+    assert.equal(summaries.filter((summary) => summary === null).length, 1, JSON.stringify(body));
+    assert.ok(summaries.some((summary) => summary !== null && requiredRecord(summary).basePrice === 377_000));
+    assert.ok(Array.isArray(body.errors));
+    assert.deepEqual(
+      body.errors.map((error) => requiredRecord(requiredRecord(error).extensions).code),
+      ["QUERY_BUDGET_EXCEEDED"],
+    );
+  }),
+  step("the answer is never stored", noStepArguments, (world) => {
+    assert.equal(requiredAgrisProxyResponse(world, 0).headers.get("Cache-Control"), "no-store");
+  }),
   step("the rejected path reports QUERY_BUDGET_EXCEEDED without reaching Pearl Abyss", noStepArguments, (world) => {
     const body = world.summaryBudgetBody;
     assert.ok(body?.errors);
@@ -424,6 +458,11 @@ interface TestBinding {
 function unlimitedMarket(): unknown {
   // SAFETY: The Vitest Miniflare configuration owns and installs the MARKET_UNLIMITED service binding for this runtime.
   return (env as Cloudflare.Env & { readonly MARKET_UNLIMITED: unknown }).MARKET_UNLIMITED;
+}
+
+function localGateway(): Fetcher {
+  // SAFETY: The Vitest Miniflare configuration owns and installs the LOCAL_GATEWAY service binding for this runtime.
+  return (env as Cloudflare.Env & { readonly LOCAL_GATEWAY: Fetcher }).LOCAL_GATEWAY;
 }
 
 function pearlAbyssObserver(): TestBinding {

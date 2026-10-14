@@ -1,7 +1,7 @@
 /**
  * Bundle every Worker the stack deploys the way Alchemy's deploy bundles it, without a Cloudflare account: the four
- * Workers of a self-hosted stage, and the smoke stage's Workers, which are the Workers' own entrypoints as a host that
- * mounts Agris deploys them.
+ * Workers of a self-hosted stage, the smoke stage's Workers, which are the Workers' own entrypoints as a host that
+ * mounts Agris deploys them, and the local gateway entrypoint a host runs on its own machine.
  *
  * Alchemy otherwise bundles only while it plans or deploys, which both read the account; this proves on every check
  * that each Worker still bundles, and keeps each bundle at `<destination>/<Worker>`, its entry module first in the
@@ -59,6 +59,8 @@ const WORKERS = {
   HostMarket: hostWorker(SMOKE_WORKER_MAIN.HostMarket),
   HostCatalog: hostWorker(SMOKE_WORKER_MAIN.HostCatalog),
   SmokeCaller: hostWorker(SMOKE_WORKER_MAIN.SmokeCaller),
+  // Never deployed by this stack: the gateway a host runs locally, with the catalog inline (`@agris/gateway-worker/local`).
+  HostLocalGateway: hostWorker(import.meta.resolve("@agris/gateway-worker/local")),
   // Never deployed: the catalog release diagnostic's search Worker (`tools/catalog`), bundled only when named.
   CatalogSearchArtifact: hostWorker(
     new URL("../tools/catalog/artifact-worker/artifact-worker.ts", import.meta.url).href,
@@ -75,6 +77,7 @@ const DEFAULT_WORKERS: readonly WorkerId[] = [
   "HostMarket",
   "HostCatalog",
   "SmokeCaller",
+  "HostLocalGateway",
 ];
 
 type WorkerId = keyof typeof WORKERS;

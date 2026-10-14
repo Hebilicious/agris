@@ -77,6 +77,6 @@ function deployedRuntime(env: DeployedAgrisProxyEnv): AgrisProxyRuntimeEnv {
     MARKET: serviceBindingPort(env.MARKET),
     CATALOG: serviceBindingPort(env.CATALOG),
     subrequestLimit: subrequestLimitFromBinding(env.SUBREQUEST_LIMIT),
-    ...("CACHE_SMOKE_MODE" in env ? { CACHE_SMOKE_MODE: env.CACHE_SMOKE_MODE } : undefined),
+    ...(env.CACHE_SMOKE_MODE === "enabled" ? { CACHE_SMOKE_MODE: "enabled" } : undefined),
   };
 }
