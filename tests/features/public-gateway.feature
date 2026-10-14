@@ -119,11 +119,27 @@ Feature: Public gateway
   Scenario: A browser opening the GraphQL path gets GraphiQL, which can load the documented schema
     When a browser opens the GraphQL path
     Then the gateway answers with the GraphiQL page, showing Agris's icon
+    And the page may run only its own scripts and the pinned GraphiQL release, and no other site may frame it
     When GraphiQL sends its introspection query
     Then the gateway answers with the client schema
     And every type, field, argument, enum value and input field in it carries the client schema's description
     When a browser opens the GraphQL path on a gateway with GraphiQL disabled
     Then the gateway answers that a query is required instead of GraphiQL
+
+  @scenario:public-gateway-graphiql-inline-scripts @provenance:spec @i1
+  Scenario: The GraphiQL policy allows every inline script by its hash, however its tag is written
+    When the GraphiQL policy is made for a page whose inline scripts carry attributes beside an external script
+    Then every inline script on that page has its hash in the policy, and nothing else is hashed
+
+  @scenario:public-gateway-graphiql-render-retry @provenance:spec @i2
+  Scenario: A GraphiQL page that failed to render is rendered again on the next request
+    When a GraphiQL page fails to render once and is then requested again
+    Then the second request renders the page afresh and gets it
+
+  @scenario:public-gateway-security-headers @provenance:spec @i1
+  Scenario: Every public response tells browsers not to sniff it or leak the referrer
+    When the same market item is requested from the public gateway by POST, by GET and by persisted id
+    Then every response forbids content sniffing and sends no referrer
 
   @scenario:public-gateway-graphiql-link @provenance:spec @i3
   Scenario: A shared link's GraphiQL page does not carry the example query

@@ -11,12 +11,12 @@ import {
   type GatewayRequestProtocol,
 } from "@agris/core";
 import { subrequestLimitFromBinding } from "@agris/invocation-budget";
-import { renderGraphiQL, shouldRenderGraphiQL } from "graphql-yoga";
+import { shouldRenderGraphiQL } from "graphql-yoga";
 import { Predicate } from "effect";
 
 import { clientAdmissionKey, marketAdmissionFromBindings } from "./admission.js";
 import type { PublicGatewaySettings, RateLimitPort } from "./env.js";
-import { AGRIS_FAVICON_URL } from "./graphiql-favicon.js";
+import { graphiqlPage } from "./graphiql-page.js";
 import {
   clientSchema,
   deploymentCacheFreshness,
@@ -38,6 +38,12 @@ const HEALTH_PATH = "/health";
 /** What a caller refused by a rate-limit binding waits: the binding states no period, and 60 seconds covers both. */
 const BINDING_RETRY_AFTER_SECONDS = 60;
 const GLOBAL_RATE_LIMIT_KEY = "agris-public-gateway";
+
+/** Sent with every public response unless the response, such as a page of a host's site, states its own. */
+const SECURITY_HEADERS = Object.freeze({
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+});
 
 const CORS_HEADERS = Object.freeze({
   "Access-Control-Allow-Origin": "*",
@@ -216,7 +222,6 @@ function rateLimited(scope: "client" | "global", deployGuideUrl: string | undefi
         "Cache-Control": "no-store",
         "Content-Type": "application/graphql-response+json; charset=utf-8",
         "Retry-After": String(retryAfterSeconds),
-        "X-Content-Type-Options": "nosniff",
       },
     },
   );
@@ -255,42 +260,10 @@ function graphiqlEnabled(value: unknown): boolean {
   throw new TypeError('GRAPHIQL must be "enabled" or "disabled"');
 }
 
-const GRAPHIQL_DEFAULT_QUERY = `# Prices and names for two items on the EU market.
-query Prices {
-  market(region: EU) {
-    observedAt
-    items(ids: ["44195", "10006"]) {
-      item { id name }
-      basePrice
-      currentStock
-    }
-  }
-}
-`;
-
-// Yoga's GraphiQL page takes its `query` option over the URL's `?query=`, and its own welcome comment when neither is
-// set; its `defaultQuery` never reaches the editor. So the example query is passed only when the link carries none.
-// `GraphiQLOptions` does not declare `query`, so the options are a named object rather than a literal.
-const GRAPHIQL_OPTIONS = { title: "Agris GraphiQL", endpoint: GRAPHQL_PATH, favicon: AGRIS_FAVICON_URL };
-const GRAPHIQL_OPTIONS_WITH_EXAMPLE = { ...GRAPHIQL_OPTIONS, query: GRAPHIQL_DEFAULT_QUERY };
-
-/** Yoga's page template links its own icon whatever the `favicon` option says, so the page's icon link is replaced. */
-const YOGA_ICON_LINK = /<link rel=icon href=[^>]*>/u;
-const AGRIS_ICON_LINK = `<link rel=icon type="image/svg+xml" href="${AGRIS_FAVICON_URL}">`;
-
-function graphiqlPage(url: URL): Response {
-  const html = renderGraphiQL(url.searchParams.has("query") ? GRAPHIQL_OPTIONS : GRAPHIQL_OPTIONS_WITH_EXAMPLE).replace(
-    YOGA_ICON_LINK,
-    AGRIS_ICON_LINK,
-  );
-  return new Response(html, {
-    headers: { "Cache-Control": "public, max-age=3600", "Content-Type": "text/html; charset=utf-8" },
-  });
-}
-
 function withPublicHeaders(response: Response, env: PublicGatewaySettings): Response {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(CORS_HEADERS)) headers.set(name, value);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) if (!headers.has(name)) headers.set(name, value);
   const notice = demoNotice(env.DEMO_NOTICE);
   if (notice !== undefined) headers.set("X-Agris-Demo", notice);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });

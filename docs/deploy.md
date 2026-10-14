@@ -217,6 +217,8 @@ The public gateway's limits on one query, after fragments are expanded ([api.md]
 
 The demo also sends an `X-Agris-Demo` notice on every response; it is not a self-hosted setting.
 
+GraphiQL is Yoga's page, which loads GraphiQL's code from one pinned release on `unpkg.com`. That code runs on the gateway's own origin, so the page is served with a `Content-Security-Policy` that lets it run only its own inline scripts, by their hashes, and that release's `dist/` directory, connect only to the gateway and that release, and be framed by no site (`frame-ancestors 'none'`, `X-Frame-Options: DENY`). It still trusts unpkg to serve that release unchanged. GraphiQL stays on by default so a new deployment can be explored in a browser; set `GRAPHIQL=disabled` when the gateway answers on a hostname that shares cookies or storage with an application of yours. Every public response carries `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` unless it states its own.
+
 ### Deployment
 
 | Variable                | Default      | Demo         | What it does                                                  |
