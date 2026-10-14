@@ -1,0 +1,26 @@
+# Every pull request names the issue it works on: `Closes #N` (or Fixes, Resolves) for an issue it fixes, `Refs #N` for
+# one it only advances. AGENTS.md, "Workflow", explains why. The body is read from the event through an environment
+# variable, never interpolated into the script.
+name: pr-issue-link
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  issue-link:
+    runs-on: ubuntu-latest
+    steps:
+      - name: The body names an issue
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s' "$PR_BODY" | grep -qiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?|refs?)[[:space:]]+#[0-9]+'; then
+            echo "The pull request names its issue."
+          else
+            echo "::error::Say which issue this pull request works on: 'Closes #N' for an issue it fixes, 'Refs #N' otherwise."
+            exit 1
+          fi
