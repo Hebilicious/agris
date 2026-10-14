@@ -13,7 +13,7 @@ Feature: Site deployment facts
     When the self-hosted and demo stages of the deploy definition are loaded
     Then the site lists these limit settings
       | variable                           | self-hosted | demo | off with |
-      | CLIENT_RATE_LIMIT_REQUESTS         | off         | 10   | 0        |
+      | CLIENT_RATE_LIMIT_REQUESTS         | 60          | 10   | 0        |
       | CLIENT_RATE_LIMIT_PERIOD_SECONDS   | 60          | 60   |          |
       | GLOBAL_RATE_LIMIT_REQUESTS         | off         | 120  | 0        |
       | GLOBAL_RATE_LIMIT_PERIOD_SECONDS   | 60          | 60   |          |

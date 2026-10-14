@@ -195,11 +195,11 @@ A misspelt setting or a value Agris cannot use stops the deploy before anything 
 | `CACHE_QUERY_SEARCH_ITEMS_MAX_AGE_SECONDS`                       | `31536000` |       | `0`      |
 | `CACHE_QUERY_SEARCH_ITEMS_STALE_WHILE_REVALIDATE_SECONDS`        | `86400`    |       | `0`      |
 
-**Rate limits.** Workers rate-limit bindings on every request to the gateway, `/health` and preflights included, per client (an IPv6 address by its /64) and for the whole deployment, counted per Cloudflare location with no round trip. The exact market limit is a Durable Object token bucket per client, asked only when a query is about to read the Central Market: a cache hit or a catalog-only query never reaches it. `0` requests turns each one off. A self-hosted gateway limits no client by default; the Pearl Abyss limits below protect the upstream either way. See [docs/deploy.md](docs/deploy.md#rate-limits).
+**Rate limits.** Workers rate-limit bindings on every request to the gateway, `/health` and preflights included, per client (an IPv6 address by its /64) and for the whole deployment, counted per Cloudflare location with no round trip. The exact market limit is a Durable Object token bucket per client, asked only when a query is about to read the Central Market: a cache hit or a catalog-only query never reaches it. `0` requests turns each one off. A self-hosted gateway limits each client to 60 requests a minute by default, and sets no global or exact market limit. A per-IP limit is a courtesy control, not a bill cap: a private deployment is `AGRIS_WORKERS_DEV=false` reached through Service Bindings. See [docs/deploy.md](docs/deploy.md#rate-limits).
 
 | Variable                             | Default | Demo    | Turn off |
 | ------------------------------------ | ------- | ------- | -------- |
-| `CLIENT_RATE_LIMIT_REQUESTS`         | `0`     | `10`    | `0`      |
+| `CLIENT_RATE_LIMIT_REQUESTS`         | `60`    | `10`    | `0`      |
 | `CLIENT_RATE_LIMIT_PERIOD_SECONDS`   | `60`    | `60`    |          |
 | `CLIENT_RATE_LIMIT_NAMESPACE_ID`     | `42010` | `42021` |          |
 | `GLOBAL_RATE_LIMIT_REQUESTS`         | `0`     | `120`   | `0`      |
