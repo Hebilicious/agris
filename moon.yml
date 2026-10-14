@@ -65,6 +65,7 @@ tasks:
       - "catalog-tools:search-artifact-check"
       - "website:figure-audit"
       - "website:links-check"
+      - "website:headers-check"
       - "website:live-check"
 
   bundle:

@@ -36,6 +36,12 @@ tasks:
     deps: ["build"]
     inputs: ["src/checks/**/*", "dist/index.html", "package.json"]
 
+  headers-check:
+    description: "Check the built site's `_headers`: every security header is set, the Content Security Policy allows each inline script and style by hash and the Run panels' requests to the demo, and every resource is on the site's own origin."
+    script: "node src/checks/headers-check.ts dist"
+    deps: ["build"]
+    inputs: ["src/checks/**/*", "src/security-headers.ts", "src/site.ts", "dist/**/*.html", "dist/_headers", "package.json"]
+
   build:
     description: "Build the static site into `website/dist`, failing if an example query is refused by the public gateway."
     command: "astro"
