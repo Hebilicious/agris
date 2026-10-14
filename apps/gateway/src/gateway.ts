@@ -33,6 +33,13 @@ import { buildSchema } from "graphql";
 import { Predicate } from "effect";
 
 import { clientSchemaSdl, supergraphSdl } from "../../../tools/schema/artifacts/gateway-schemas.js";
+import {
+  ADMISSION_UNAVAILABLE_RETRY_SECONDS,
+  admissionObjectName,
+  admitThrough,
+  withClientAdmissionKey,
+  type MarketAdmission,
+} from "./admission.js";
 import { gatewayPlugins } from "./plugins.js";
 
 /**
@@ -66,6 +73,12 @@ export interface AgrisProxyRuntimeEnv {
    * exceed the Worker's `limits.subrequests`. Absent is `DEFAULT_SUBREQUEST_LIMIT`.
    */
   readonly subrequestLimit?: number;
+  /**
+   * The exact market admission: an execution for a public caller asks its client's `GatewayAdmission` bucket once,
+   * before its first market subgraph call, and spends one subrequest of its budget doing so. Absent admits every
+   * market call; a cache hit or a catalog-only execution never asks.
+   */
+  readonly marketAdmission?: MarketAdmission;
 }
 
 export interface BudgetedSubgraphServiceBinding {
@@ -149,12 +162,15 @@ export async function handleAgrisProxyRequest(
 
 /**
  * Serve one normalized operation: through `cached`, the host's edge-cached execution, when its policy stores it,
- * otherwise directly.
+ * otherwise directly. `clientKey` is the public caller's admission key (`clientAdmissionKey`), or `null` for a private
+ * caller: an execution admits its market calls under it, and the cache key request carries it in a header, which
+ * Workers Cache does not key on, so every client shares the stored answers.
  */
 export async function serveGatewayOperationWith(
   normalized: NormalizedGatewayRequest,
   env: AgrisProxyRuntimeEnv,
   cached: CachedAgrisProxyExecution,
+  clientKey: string | null = null,
 ): Promise<Response> {
   const props: AgrisProxyExecutionProps = {
     cachePolicy: normalized.cachePolicy,
@@ -164,8 +180,8 @@ export async function serveGatewayOperationWith(
     smokeFailureAfterEpochMs: smokeFailureDeadline(env, normalized.execution.operationName),
   };
   const response = await dispatchGatewayOperation(normalized, {
-    cached: (syntheticRequest) => cached(syntheticRequest, props),
-    execute: () => executeAgrisProxy(env, props),
+    cached: (syntheticRequest) => cached(withClientAdmissionKey(syntheticRequest, clientKey), props),
+    execute: () => executeAgrisProxy(env, props, clientKey),
   });
   return deliverGatewayResponse(response, props.cachePolicy);
 }
@@ -226,12 +242,20 @@ function subgraphExecutionOf(context: unknown): SubgraphExecution {
   return execution;
 }
 
-/** Execute one operation over the subgraphs, with Agris's subgraph fetch and then the extension point's plugins. */
-export async function executeAgrisProxy(env: AgrisProxyRuntimeEnv, props: AgrisProxyExecutionProps): Promise<Response> {
+/**
+ * Execute one operation over the subgraphs, with Agris's subgraph fetch and then the extension point's plugins. A
+ * `clientKey` (a public caller's, from `clientAdmissionKeyOf` on the cache key request) has the execution admit its
+ * market calls through `env.marketAdmission`; `null` admits them all.
+ */
+export async function executeAgrisProxy(
+  env: AgrisProxyRuntimeEnv,
+  props: AgrisProxyExecutionProps,
+  clientKey: string | null = null,
+): Promise<Response> {
   if (props.smokeFailureAfterEpochMs !== null && Date.now() >= props.smokeFailureAfterEpochMs) {
     return subgraphUnavailableResponse();
   }
-  const subgraphs = new SubgraphExecution(env);
+  const subgraphs = new SubgraphExecution(env, clientKey);
   const executionContext: SubgraphExecutionContext = { [SUBGRAPH_EXECUTION]: subgraphs };
   const response = await gatewayRuntimeFor(env.plugins ?? gatewayPlugins).fetch(
     new Request("https://agris-proxy.internal/graphql", {
@@ -259,8 +283,9 @@ export async function executeAgrisProxy(env: AgrisProxyRuntimeEnv, props: AgrisP
     hasGraphqlErrors,
     upstream,
   });
-  // A throttled execution leaves the edge cache as a 503, the only failure Workers Cache answers with a stale entry
-  // (`stale-if-error`); the marker tells `deliverGatewayResponse` to turn it into the caller's 429.
+  // A throttled execution, by Pearl Abyss's limit or by the client's market admission, leaves the edge cache as a 503,
+  // the only failure Workers Cache answers with a stale entry (`stale-if-error`); the marker tells
+  // `deliverGatewayResponse` to turn it into the caller's 429.
   const throttled = upstream === "rate-limited";
   return new Response(body, {
     status: throttled ? 503 : classification.status,
@@ -330,9 +355,15 @@ class SubgraphExecution {
   private readonly reserveBudget: InvocationBudgetReservation;
   private readonly reserveMarketSummary: MarketSummaryReservation;
   private readonly env: AgrisProxyRuntimeEnv;
+  /** The client's bucket and rate, when this execution admits its market calls. */
+  private readonly admission: (MarketAdmission & { readonly clientKey: string }) | undefined;
+  /** The one admission decision every market call of this execution shares, once the first one asked. */
+  private marketAdmission: Promise<MarketAdmissionOutcome> | undefined;
 
-  public constructor(env: AgrisProxyRuntimeEnv) {
+  public constructor(env: AgrisProxyRuntimeEnv, clientKey: string | null) {
     this.env = env;
+    this.admission =
+      env.marketAdmission === undefined || clientKey === null ? undefined : { ...env.marketAdmission, clientKey };
     const subrequestLimit = env.subrequestLimit ?? DEFAULT_SUBREQUEST_LIMIT;
     this.budget = new InvocationBudget(subrequestLimit);
     this.marketSummaryBudget = new MarketSummaryOperationBudget(marketSummaryRequestLimitFor(subrequestLimit), {
@@ -358,7 +389,9 @@ class SubgraphExecution {
       const response =
         url === CATALOG_SUBGRAPH_URL && this.env.LOCAL_INLINE_CATALOG === true
           ? await this.env.CATALOG.fetch(new Request(url, init), this.reserveBudget, this.reserveMarketSummary)
-          : await this.coordinator.fetch(url, init);
+          : url === MARKET_SUBGRAPH_URL
+            ? await this.fetchMarket(url, init)
+            : await this.coordinator.fetch(url, init);
       if (response.status >= 500) throw new ServiceBindingFailure("service-binding/unavailable");
       if (response.status === 429) {
         // The subgraph read nothing because a limiter refused it; its body still carries the field errors.
@@ -381,6 +414,24 @@ class SubgraphExecution {
     }
   }
 
+  /**
+   * A market subgraph call, admitted first when this execution admits its market calls. A refusal reads like the
+   * market's own throttle, a 429 with `Retry-After` and a `RATE_LIMITED` error, so the caller gets a stale cached answer
+   * when the edge keeps one and a 429 otherwise.
+   */
+  private async fetchMarket(url: string, init: RequestInit | undefined): Promise<Response> {
+    const outcome = await this.admitMarket();
+    if (outcome === "over-budget") throw new ServiceBindingFailure("service-binding/budget-exceeded");
+    if (outcome !== "admitted") return marketAdmissionRefusedResponse(outcome.retryAfterSeconds);
+    return this.coordinator.fetch(url, init);
+  }
+
+  private admitMarket(): Promise<MarketAdmissionOutcome> {
+    if (this.admission === undefined) return Promise.resolve("admitted");
+    this.marketAdmission ??= askMarketAdmission(this.admission, this.budget);
+    return this.marketAdmission;
+  }
+
   /** `answered` when any subgraph call answered; otherwise `rate-limited` when one was throttled, else `unavailable`. */
   public upstreamOutcome(): GatewayUpstreamOutcome {
     if (this.attempts === 0 || this.successes > 0) return "answered";
@@ -391,6 +442,45 @@ class SubgraphExecution {
   public retryAfterSeconds(): number {
     return this.rateLimitedRetryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS;
   }
+}
+
+/** An execution's market admission: admitted, refused until `retryAfterSeconds`, or beyond its subrequest budget. */
+type MarketAdmissionOutcome = "admitted" | "over-budget" | { readonly retryAfterSeconds: number };
+
+/**
+ * Ask the client's `GatewayAdmission` bucket once. The call is a subrequest, so it spends one of the execution's
+ * budget. Admission fails closed: an object that cannot answer refuses the market calls for a few seconds, since an
+ * overloaded object is exactly what a flood causes.
+ */
+async function askMarketAdmission(
+  admission: MarketAdmission & { readonly clientKey: string },
+  budget: InvocationBudget,
+): Promise<MarketAdmissionOutcome> {
+  if (!budget.reserve(1).ok) return "over-budget";
+  const name = admissionObjectName(admission.clientKey);
+  try {
+    const decision = await admitThrough(admission.namespace, name, admission.rate);
+    return decision.admitted ? "admitted" : { retryAfterSeconds: decision.retryAfterSeconds };
+  } catch (error: unknown) {
+    console.error({ event: "gateway-admission-unavailable", name, error: String(error) });
+    return { retryAfterSeconds: ADMISSION_UNAVAILABLE_RETRY_SECONDS };
+  }
+}
+
+/** A market call the client's admission refused, as the market subgraph answers a throttled read. */
+function marketAdmissionRefusedResponse(retryAfterSeconds: number): Response {
+  return Response.json(
+    {
+      data: null,
+      errors: [
+        {
+          message: `This client is reading the Central Market too often. Retry after ${retryAfterSeconds} seconds.`,
+          extensions: { code: "RATE_LIMITED" },
+        },
+      ],
+    },
+    { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": String(retryAfterSeconds) } },
+  );
 }
 
 /* BOUNDARY: An execution's status and its throttle marker, which only `executeAgrisProxy` sets. */

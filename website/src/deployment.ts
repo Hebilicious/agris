@@ -26,6 +26,8 @@ export interface DeploymentFacts {
   readonly clientRateLimit: Rate | null;
   /** `GLOBAL_RATE_LIMITER` on the gateway: requests per Cloudflare location, or none. */
   readonly globalRateLimit: Rate | null;
+  /** The exact market admission (`MARKET_CLIENT_LIMIT_*`): market executions per IP, counted exactly, or none. */
+  readonly marketClientLimit: Rate | null;
   /** The deployment's `CACHE_*` settings, as changes to the defaults, or `null` when it sets none. */
   readonly cacheFreshnessOverride: CacheFreshnessOverride | null;
   /** The cache freshness the gateway runs with: `DEFAULT_CACHE_FRESHNESS` with `cacheFreshnessOverride` applied. */
@@ -60,6 +62,10 @@ export function deploymentFacts(settings: DeploymentSettings): DeploymentFacts {
   return {
     clientRateLimit: rateOfSetting(settings.clientRateLimit),
     globalRateLimit: rateOfSetting(settings.globalRateLimit),
+    marketClientLimit:
+      settings.marketClientLimit === null
+        ? null
+        : { limit: settings.marketClientLimit.limit, period: settings.marketClientLimit.periodSeconds },
     cacheFreshnessOverride: settings.cacheOverride,
     cacheFreshness: settings.cacheFreshness,
     freshnessFloorSeconds: settings.cacheFreshness.minimumSeconds,
@@ -146,6 +152,19 @@ export function limitSettingsOf(selfHosted: DeploymentSettings, demo: Deployment
       unit: "requests",
     },
     { variable: DEPLOY_SETTING.globalRateLimitPeriod, label: "Period of the per-location limit" },
+  );
+  rate(
+    (settings) =>
+      settings.marketClientLimit === null
+        ? null
+        : { limit: settings.marketClientLimit.limit, period: settings.marketClientLimit.periodSeconds },
+    SELF_HOSTED_DEFAULTS.marketClientLimit.periodSeconds,
+    {
+      variable: DEPLOY_SETTING.marketClientLimitRequests,
+      label: "Market queries per visitor, counted exactly",
+      unit: "requests",
+    },
+    { variable: DEPLOY_SETTING.marketClientLimitPeriod, label: "Period of the exact market limit" },
   );
   rate(
     (settings) => settings.pearlAbyssRateLimit,

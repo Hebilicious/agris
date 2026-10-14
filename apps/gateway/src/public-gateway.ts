@@ -14,6 +14,7 @@ import { subrequestLimitFromBinding } from "@agris/invocation-budget";
 import { renderGraphiQL, shouldRenderGraphiQL } from "graphql-yoga";
 import { Predicate } from "effect";
 
+import { clientAdmissionKey, marketAdmissionFromBindings } from "./admission.js";
 import type { PublicGatewaySettings, RateLimitPort } from "./env.js";
 import { AGRIS_FAVICON_URL } from "./graphiql-favicon.js";
 import {
@@ -34,7 +35,8 @@ import persistedOperationsManifest from "../../../tools/schema/artifacts/persist
 
 const GRAPHQL_PATH = "/graphql";
 const HEALTH_PATH = "/health";
-const RETRY_AFTER_SECONDS = 60;
+/** What a caller refused by a rate-limit binding waits: the binding states no period, and 60 seconds covers both. */
+const BINDING_RETRY_AFTER_SECONDS = 60;
 const GLOBAL_RATE_LIMIT_KEY = "agris-public-gateway";
 
 const CORS_HEADERS = Object.freeze({
@@ -51,6 +53,12 @@ const PREFLIGHT_HEADERS = Object.freeze({
   "Cache-Control": "no-store",
 });
 
+/** The answer to a preflight admission refused: the same permissions, which the browser must not remember. */
+const REFUSED_PREFLIGHT = Object.freeze({
+  status: 204,
+  headers: { ...PREFLIGHT_HEADERS, "Access-Control-Max-Age": "0" },
+});
+
 const persistedDocuments = readPersistedOperationDocuments(persistedOperationsManifest);
 const protocols = new WeakMap<CacheFreshnessPolicy, Map<string, GatewayRequestProtocol>>();
 
@@ -65,9 +73,14 @@ export interface PublicGatewayHost {
 /**
  * Answer one request at the public gateway: GraphQL over HTTP at `/graphql` (POST, GET and persisted GET by `id`),
  * `/health`, and the `ASSETS` binding, when bound, for everything else. It runs the same validation, budgets, size
- * limits and cached dispatch as the private Service Binding entrypoint, and adds query size limits, optional rate
- * limits and CORS. `env` is the deployment's environment, read for its optional bindings and its `CACHE_*` and
- * `QUERY_*` variables.
+ * limits and cached dispatch as the private Service Binding entrypoint, and adds query size limits, rate limits and
+ * CORS. `env` is the deployment's environment, read for its optional bindings and its `CACHE_*`, `QUERY_*` and
+ * `MARKET_CLIENT_LIMIT_*` variables.
+ *
+ * The rate-limit bindings come before the route, so a health check, a preflight or a page of the site spends the same
+ * allowance as a query; they are local to the Cloudflare location and add no round trip. A refused preflight is still
+ * answered `204`, uncacheable, so the browser sends its real request and can read that request's `429`. The exact
+ * market admission comes later, only when an execution is about to call the market subgraph (`gateway.ts`).
  */
 export async function handlePublicGatewayRequest(
   request: Request,
@@ -75,12 +88,24 @@ export async function handlePublicGatewayRequest(
   host: PublicGatewayHost,
 ): Promise<Response> {
   const url = new URL(request.url);
-  const response = await route(request, url, env, host);
-  return withPublicHeaders(response, env);
+  const clientKey = clientAdmissionKey(request.headers.get("CF-Connecting-IP"));
+  const refusal = await bindingRefusal(clientKey, env);
+  if (refusal === undefined) return withPublicHeaders(await route(request, url, env, host, clientKey), env);
+  // A browser cannot read a refused preflight, so it would report a network error. The preflight was still charged;
+  // answering it lets the real request through to admission, whose refusal the browser can read, and `Max-Age: 0`
+  // keeps the browser from skipping the next preflight.
+  if (request.method === "OPTIONS") return withPublicHeaders(new Response(null, REFUSED_PREFLIGHT), env);
+  return withPublicHeaders(refusal, env);
 }
 
-async function route(request: Request, url: URL, env: PublicGatewaySettings, host: PublicGatewayHost) {
-  if (url.pathname === GRAPHQL_PATH) return serveGraphql(request, url, env, host);
+async function route(
+  request: Request,
+  url: URL,
+  env: PublicGatewaySettings,
+  host: PublicGatewayHost,
+  clientKey: string,
+) {
+  if (url.pathname === GRAPHQL_PATH) return serveGraphql(request, url, env, host, clientKey);
   if (url.pathname === HEALTH_PATH) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: PREFLIGHT_HEADERS });
     if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed("GET, HEAD, OPTIONS");
@@ -98,12 +123,10 @@ async function serveGraphql(
   url: URL,
   env: PublicGatewaySettings,
   host: PublicGatewayHost,
+  clientKey: string,
 ): Promise<Response> {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: PREFLIGHT_HEADERS });
   if (request.method !== "GET" && request.method !== "POST") return methodNotAllowed("GET, POST, OPTIONS");
-
-  const limited = await rateLimitRejection(request, env);
-  if (limited !== undefined) return limited;
 
   if (wantsGraphiql(request, url, env)) return graphiqlPage(url);
 
@@ -114,8 +137,15 @@ async function serveGraphql(
   const normalized =
     request.method === "POST" ? await normalizePost(request, url, protocol) : await normalizeGet(url, protocol);
   if (!normalized.ok) return gatewayError(normalized.error.status, normalized.error.message);
-  const runtime = { ...host.subgraphs, subrequestLimit: subrequestLimitFromBinding(env.SUBREQUEST_LIMIT) };
-  return serveGatewayOperationWith(normalized.value, runtime, host.cached);
+  // An uncacheable operation executes here, so this invocation admits its market calls; a cacheable one is admitted by
+  // the cached execution, and only when the edge cache misses.
+  const marketAdmission = marketAdmissionFromBindings(env, env.ADMISSION);
+  const runtime = {
+    ...host.subgraphs,
+    subrequestLimit: subrequestLimitFromBinding(env.SUBREQUEST_LIMIT),
+    ...(marketAdmission === undefined ? {} : { marketAdmission }),
+  };
+  return serveGatewayOperationWith(normalized.value, runtime, host.cached, clientKey);
 }
 
 async function normalizePost(
@@ -144,23 +174,28 @@ async function normalizeGet(url: URL, protocol: GatewayRequestProtocol): Promise
   });
 }
 
-/** The client limiter runs first, so one client's flood never spends the deployment-wide allowance. */
-async function rateLimitRejection(request: Request, env: PublicGatewaySettings): Promise<Response | undefined> {
-  const clientKey = request.headers.get("CF-Connecting-IP") ?? "unknown-client";
-  if (!(await admitted(env.CLIENT_RATE_LIMITER, clientKey))) return rateLimited("client", env.DEPLOY_GUIDE_URL);
-  if (!(await admitted(env.GLOBAL_RATE_LIMITER, GLOBAL_RATE_LIMIT_KEY)))
+/**
+ * The refusal of one request by the rate-limit bindings, client scope first, so one client's flood never spends the
+ * deployment-wide allowance; `undefined` when both admit it. A binding is local to the Cloudflare location and costs
+ * nothing beyond the invocation, so every request, whatever its path, pays it.
+ */
+async function bindingRefusal(clientKey: string, env: PublicGatewaySettings): Promise<Response | undefined> {
+  if (!(await bindingAdmits(env.CLIENT_RATE_LIMITER, clientKey))) return rateLimited("client", env.DEPLOY_GUIDE_URL);
+  if (!(await bindingAdmits(env.GLOBAL_RATE_LIMITER, GLOBAL_RATE_LIMIT_KEY))) {
     return rateLimited("global", env.DEPLOY_GUIDE_URL);
+  }
   return undefined;
 }
 
-/** A deployment without the limiter's binding limits nothing. */
-async function admitted(limiter: RateLimitPort | undefined, key: string): Promise<boolean> {
+/** A deployment without the limiter's binding limits nothing here. */
+async function bindingAdmits(limiter: RateLimitPort | undefined, key: string): Promise<boolean> {
   if (limiter === undefined) return true;
   const outcome = await limiter.limit({ key });
   return outcome.success;
 }
 
 function rateLimited(scope: "client" | "global", deployGuideUrl: string | undefined): Response {
+  const retryAfterSeconds = BINDING_RETRY_AFTER_SECONDS;
   const deployYourOwn =
     deployGuideUrl === undefined || deployGuideUrl === ""
       ? "deploy your own Agris on Cloudflare"
@@ -170,7 +205,7 @@ function rateLimited(scope: "client" | "global", deployGuideUrl: string | undefi
     {
       errors: [
         {
-          message: `${reason}. Retry after ${RETRY_AFTER_SECONDS} seconds, or ${deployYourOwn}`,
+          message: `${reason}. Retry after ${retryAfterSeconds} seconds, or ${deployYourOwn}`,
           extensions: { code: "RATE_LIMITED", scope },
         },
       ],
@@ -180,7 +215,7 @@ function rateLimited(scope: "client" | "global", deployGuideUrl: string | undefi
       headers: {
         "Cache-Control": "no-store",
         "Content-Type": "application/graphql-response+json; charset=utf-8",
-        "Retry-After": String(RETRY_AFTER_SECONDS),
+        "Retry-After": String(retryAfterSeconds),
         "X-Content-Type-Options": "nosniff",
       },
     },

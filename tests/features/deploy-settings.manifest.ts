@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { marketAdmissionRateFromBindings } from "../../apps/gateway/src/admission.ts";
 import { gatewayCacheProps, gatewayProps } from "../../infra/src/gateway/props.ts";
 import { marketProps } from "../../infra/src/market/props.ts";
 import { DEFAULT_STAGE, DEMO_STAGE, stageSettings, type DeploymentSettings } from "../../infra/src/settings.ts";
@@ -26,6 +27,7 @@ const EVERY_LIMIT_OFF = {
   PA_RATE_LIMIT_REQUESTS: "0",
   PA_MAX_CONCURRENT_REQUESTS: "0",
   CACHE_MINIMUM_SECONDS: "0",
+  MARKET_CLIENT_LIMIT_REQUESTS: "0",
 };
 
 function required(world: DeploySettingsWorld): DeploymentSettings {
@@ -39,6 +41,23 @@ function gateway(world: DeploySettingsWorld) {
 
 function market(world: DeploySettingsWorld) {
   return marketProps(required(world));
+}
+
+/**
+ * The exact market admission the gateway and the cache Worker run with, read from each one's variables by the
+ * gateway's own parser; both run executions, so both must hold the same rate.
+ */
+function marketAdmission(world: DeploySettingsWorld) {
+  const [onGateway, onCache] = [gateway(world).env, gatewayCacheProps(required(world)).env].map((env) =>
+    marketAdmissionRateFromBindings(plainVariables(env)),
+  );
+  assert.deepEqual(onGateway, onCache);
+  return onGateway;
+}
+
+/** A gateway's plain variables other than its exact market admission ones, which their own steps check. */
+function withoutAdmission(variables: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+  return Object.fromEntries(Object.entries(variables).filter(([name]) => !name.startsWith("MARKET_CLIENT_LIMIT_")));
 }
 
 function refusal(environment: Readonly<Record<string, string>>): unknown {
@@ -70,6 +89,16 @@ const steps: readonly StepDefinition<DeploySettingsWorld>[] = [
     assert.equal(boundRate(gateway(world).env, "CLIENT_RATE_LIMITER"), null);
     assert.equal(boundRate(gateway(world).env, "GLOBAL_RATE_LIMITER"), null);
   }),
+  step("its gateway and cache Workers set no exact market admission", noStepArguments, (world) => {
+    assert.equal(marketAdmission(world), null);
+  }),
+  step(
+    "its gateway and cache Workers admit each client's market executions exactly {int} per {int} seconds",
+    integerPairStepArguments,
+    (world, limit, periodSeconds) => {
+      assert.deepEqual(marketAdmission(world), { limit, periodSeconds });
+    },
+  ),
   step(
     "its gateway, cache and market Workers allow {int} subrequests and bind SUBREQUEST_LIMIT to {int}",
     integerPairStepArguments,
@@ -93,7 +122,7 @@ const steps: readonly StepDefinition<DeploySettingsWorld>[] = [
     "its gateway binds no cache or query variable, so it runs the default policy and limits",
     noStepArguments,
     (world) => {
-      assert.deepEqual(plainVariables(gateway(world).env), { SUBREQUEST_LIMIT: "50" });
+      assert.deepEqual(withoutAdmission(plainVariables(gateway(world).env)), { SUBREQUEST_LIMIT: "50" });
     },
   ),
   step("it answers on workers.dev and on no other hostname", noStepArguments, (world) => {
@@ -120,7 +149,7 @@ const steps: readonly StepDefinition<DeploySettingsWorld>[] = [
     assert.equal(plainVariables(market(world).env).PA_MAX_CONCURRENT_REQUESTS, "0");
   }),
   step("its gateway binds CACHE_ENABLED, QUERY_MAX_DEPTH and GRAPHIQL as they were set", noStepArguments, (world) => {
-    assert.deepEqual(plainVariables(gateway(world).env), {
+    assert.deepEqual(withoutAdmission(plainVariables(gateway(world).env)), {
       CACHE_ENABLED: "false",
       QUERY_MAX_DEPTH: "0",
       GRAPHIQL: "disabled",

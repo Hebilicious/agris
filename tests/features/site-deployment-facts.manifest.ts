@@ -4,6 +4,7 @@ import { cacheFreshnessFromBindings, cacheFreshnessOverrideFromBindings } from "
 import { gatewayCacheProps, gatewayProps } from "../../infra/src/gateway/props.ts";
 import { marketProps } from "../../infra/src/market/props.ts";
 import { DEMO_STAGE, DEFAULT_STAGE, stageSettings } from "../../infra/src/settings.ts";
+import { marketAdmissionRateFromBindings } from "../../apps/gateway/src/admission.ts";
 import { buildSchema } from "graphql";
 
 import { clientSchemaSdl } from "../../tools/schema/artifacts/gateway-schemas.ts";
@@ -42,9 +43,12 @@ function deployedFacts(stage: string): DeploymentFacts {
     assert.equal(props.limits.subrequests, subrequestLimit, `${props.name} shares the gateway's limits.subrequests`);
     assert.equal(plainVariables(props.env).SUBREQUEST_LIMIT, String(subrequestLimit), `${props.name} SUBREQUEST_LIMIT`);
   }
+  const marketClientLimit = marketAdmissionRateFromBindings(gatewayVariables);
   return {
     clientRateLimit: boundRate(gateway.env, "CLIENT_RATE_LIMITER"),
     globalRateLimit: boundRate(gateway.env, "GLOBAL_RATE_LIMITER"),
+    marketClientLimit:
+      marketClientLimit === null ? null : { limit: marketClientLimit.limit, period: marketClientLimit.periodSeconds },
     cacheFreshnessOverride: cacheFreshnessOverrideFromBindings(gatewayVariables, clientSchema) ?? null,
     cacheFreshness,
     freshnessFloorSeconds: cacheFreshness.minimumSeconds,

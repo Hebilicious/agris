@@ -1,6 +1,6 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 
-import type { DeploymentSettings, RateLimitSetting } from "../settings.ts";
+import { marketAdmissionVariables, type DeploymentSettings, type RateLimitSetting } from "../settings.ts";
 import { bundleOptions, compatibility, localPort, observability, privateSurface, subrequestLimit } from "../stack.ts";
 
 function rateLimit(name: string, setting: RateLimitSetting) {
@@ -12,8 +12,8 @@ function rateLimit(name: string, setting: RateLimitSetting) {
 
 /**
  * The public gateway's props in one stage: its `workers.dev` address and any hostname the stage adds, its rate
- * limiters, and its plain-text variables. A limit the stage turned off binds no limiter, and the gateway then limits
- * nothing there.
+ * limiters, and its plain-text variables, among them the exact `MARKET_CLIENT_LIMIT_*` limit. A limit the stage turned
+ * off binds no limiter, and the gateway then limits nothing there.
  */
 export function gatewayProps(settings: DeploymentSettings) {
   return {
@@ -40,7 +40,10 @@ export function gatewayProps(settings: DeploymentSettings) {
   };
 }
 
-/** The cache Worker's props in one stage: private, reached only by the gateway, with Workers Cache on. */
+/**
+ * The cache Worker's props in one stage: private, reached only by the gateway, with Workers Cache on, and the exact
+ * `MARKET_CLIENT_LIMIT_*` limit its misses admit their market calls with (`admission.ts` declares the class it hosts).
+ */
 export function gatewayCacheProps(settings: DeploymentSettings) {
   return {
     name: settings.names.cache,
@@ -51,6 +54,9 @@ export function gatewayCacheProps(settings: DeploymentSettings) {
     workersDev: privateSurface(),
     limits: subrequestLimit(settings.subrequestLimit).limits,
     observability: observability(settings.sampling),
-    env: subrequestLimit(settings.subrequestLimit).variable,
+    env: {
+      ...marketAdmissionVariables(settings.marketClientLimit),
+      ...subrequestLimit(settings.subrequestLimit).variable,
+    },
   };
 }

@@ -77,16 +77,16 @@ Locales: `EN`, `DE`, `FR`, `ES` (Latin American Spanish), `ES_EU`, `PT`, `RU`, `
 
 Responses use `Content-Type: application/graphql-response+json; charset=utf-8`.
 
-| Status | Meaning                                                                                                                                                                                                                                                                                       |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `200`  | The query ran. The body may still contain `errors` next to partial `data`.                                                                                                                                                                                                                    |
-| `400`  | Malformed JSON, invalid document, non-query operation, unknown persisted ID or invalid variables.                                                                                                                                                                                             |
-| `404`  | A path other than `/graphql` or `/health`.                                                                                                                                                                                                                                                    |
-| `405`  | An HTTP method the endpoint does not accept.                                                                                                                                                                                                                                                  |
-| `415`  | A POST without `application/json`.                                                                                                                                                                                                                                                            |
-| `429`  | Rate limited: by the gateway's own limits, or because every Pearl Abyss read the query needed was throttled by the market's Pearl Abyss limit or refused by a full Pearl Abyss queue, with no cached answer left to serve stale. Wait for the number of seconds in `Retry-After`. Not cached. |
-| `502`  | The internal response exceeded the 1 MiB ceiling.                                                                                                                                                                                                                                             |
-| `503`  | No subgraph call succeeded because Pearl Abyss or a subgraph could not be reached, did not answer in time, or sent an answer that could not be read. Not cached.                                                                                                                              |
+| Status | Meaning                                                                                                                                                                                                                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `200`  | The query ran. The body may still contain `errors` next to partial `data`.                                                                                                                                                                                                                                                                             |
+| `400`  | Malformed JSON, invalid document, non-query operation, unknown persisted ID or invalid variables.                                                                                                                                                                                                                                                      |
+| `404`  | A path other than `/graphql` or `/health`.                                                                                                                                                                                                                                                                                                             |
+| `405`  | An HTTP method the endpoint does not accept.                                                                                                                                                                                                                                                                                                           |
+| `415`  | A POST without `application/json`.                                                                                                                                                                                                                                                                                                                     |
+| `429`  | Rate limited: by the gateway's own limits, by the exact limit on one client's Central Market reads, or because every Pearl Abyss read the query needed was throttled by the market's Pearl Abyss limit or refused by a full Pearl Abyss queue, with no cached answer left to serve stale. Wait for the number of seconds in `Retry-After`. Not cached. |
+| `502`  | The internal response exceeded the 1 MiB ceiling.                                                                                                                                                                                                                                                                                                      |
+| `503`  | No subgraph call succeeded because Pearl Abyss or a subgraph could not be reached, did not answer in time, or sent an answer that could not be read. Not cached.                                                                                                                                                                                       |
 
 Request-level failures have a body of the form `{"errors":[{"message":"..."}]}` and `Cache-Control: no-store`.
 
@@ -95,7 +95,7 @@ Field-level errors carry a code in `extensions.code`:
 - `BAD_USER_INPUT` from the catalog: `searchItems` got a query shorter than 3 characters after folding, longer than the longest item name, or `first` outside 1 to 100, with no partial data; or `item(id:)` or `items(ids:)` got an item ID that is not a positive whole number. The message says which.
 - `BAD_USER_INPUT` from the market: an item ID that is not a positive whole number, an enhancement level outside 0 to 20, or a category the Central Market does not have. The message says which.
 - `QUERY_BUDGET_EXCEEDED`: a market-summary batch asked for more than 100 distinct items, whether through `Market.items(ids:)` or `Item.marketSummary`, the request needed more than 6 distinct summary batches, or it needed more subgraph calls and Pearl Abyss requests than the deployment's subrequest budget (50 by default). The affected nullable fields are `null`; sibling data survives. Ask for fewer markets, items or categories in one query. A budget refusal is never a `503`: nothing was sent to Pearl Abyss.
-- `RATE_LIMITED`: the market's Pearl Abyss limit refused the read, or its queue of waiting reads was full. The message gives the seconds to wait; when nothing else in the query was read, the whole answer is a `429` with `Retry-After`, unless the edge still keeps an earlier answer to the query, which it then serves stale.
+- `RATE_LIMITED`: the market's Pearl Abyss limit refused the read, its queue of waiting reads was full, or the deployment's exact limit on one client's Central Market reads refused it. The message gives the seconds to wait; when nothing else in the query was read, the whole answer is a `429` with `Retry-After`, unless the edge still keeps an earlier answer to the query, which it then serves stale.
 - `UPSTREAM_UNAVAILABLE`: Pearl Abyss could not be reached, did not answer in time, or sent an answer that could not be read, for this field. Other fields keep their data.
 - `INTERNAL_SERVER_ERROR`: anything else went wrong in a subgraph. The message is always "The market subgraph could not answer this field." or "The catalog subgraph could not answer this field.": internal error text never leaves a subgraph.
 
@@ -103,21 +103,21 @@ Pearl Abyss returns one ambiguous answer for both "unknown item" and "no market 
 
 ## Limits
 
-| Limit                              | Value                                                        |
-| ---------------------------------- | ------------------------------------------------------------ |
-| Request body                       | 64 KiB                                                       |
-| Response body                      | 1 MiB                                                        |
-| Document depth                     | 8 levels of fields, fragments expanded                       |
-| Fields per document                | 150, fragments expanded                                      |
-| Aliases per document               | 15                                                           |
-| Subrequests per request            | 50 (the invocation budget, `SUBREQUEST_LIMIT`)               |
-| Items per summary batch            | 100 distinct                                                 |
-| Summary batches per request        | 6 distinct                                                   |
-| `searchItems.first`                | 1 to 100                                                     |
-| Rate limit, self-hosted gateway    | none                                                         |
-| Rate limit, shared demo            | 10 per minute per IP, 120 per minute per Cloudflare location |
-| Pearl Abyss concurrency (per host) | 6 active requests, up to 100 more queued                     |
-| Pearl Abyss request timeout        | 30 seconds, time waiting in the queue included               |
+| Limit                              | Value                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Request body                       | 64 KiB                                                                                                         |
+| Response body                      | 1 MiB                                                                                                          |
+| Document depth                     | 8 levels of fields, fragments expanded                                                                         |
+| Fields per document                | 150, fragments expanded                                                                                        |
+| Aliases per document               | 15                                                                                                             |
+| Subrequests per request            | 50 (the invocation budget, `SUBREQUEST_LIMIT`)                                                                 |
+| Items per summary batch            | 100 distinct                                                                                                   |
+| Summary batches per request        | 6 distinct                                                                                                     |
+| `searchItems.first`                | 1 to 100                                                                                                       |
+| Rate limit, self-hosted gateway    | none                                                                                                           |
+| Rate limit, shared demo            | 10 per minute per IP and 120 in all, per Cloudflare location; 10 Central Market reads per minute per IP, exact |
+| Pearl Abyss concurrency (per host) | 6 active requests, up to 100 more queued                                                                       |
+| Pearl Abyss request timeout        | 30 seconds, time waiting in the queue included                                                                 |
 
 These are the defaults. A deployment can change or turn off the depth, field and alias limits (`QUERY_MAX_*`), turn on or change both rate limits, change the Pearl Abyss concurrency, and change the subrequest budget; [deploy.md](deploy.md#configuration) lists every setting.
 

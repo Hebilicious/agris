@@ -24,6 +24,10 @@
       "types": "./src/public-gateway.ts",
       "import": "./src/public-gateway.ts"
     },
+    "./admission": {
+      "types": "./src/admission.ts",
+      "import": "./src/admission.ts"
+    },
     "./env": {
       "types": "./src/env.ts",
       "import": "./src/env.ts"

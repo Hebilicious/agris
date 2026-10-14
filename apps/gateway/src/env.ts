@@ -1,3 +1,5 @@
+import type { AdmissionNamespacePort } from "./admission.js";
+
 /**
  * The bindings the gateway Worker reads. A deployment configuration, this repository's or a host's, must provide them;
  * `infra/src/smoke/env.check.ts` proves the smoke stage, which deploys this entrypoint as a host does, provides them.
@@ -44,14 +46,41 @@ export interface AssetsPort {
 }
 
 /**
+ * The exact market admission, which the executions behind the public gateway read: the public gateway itself for an
+ * uncacheable operation, and the cached execution (`CachedAgrisProxy`) on a cache miss. Each binding is optional; a
+ * private caller is never admitted, whatever they set.
+ */
+export interface MarketAdmissionEnv {
+  /**
+   * This Worker's own `GatewayAdmission` Durable Object class (`src/public.ts`), which keeps one exact token bucket per
+   * client. Required when `MARKET_CLIENT_LIMIT_REQUESTS` is set.
+   */
+  readonly ADMISSION?: AdmissionNamespacePort;
+  /**
+   * Exact market executions per client per `MARKET_CLIENT_LIMIT_PERIOD_SECONDS`, asked only before an execution's first
+   * market subgraph call; absent or `"0"` sets none.
+   */
+  readonly MARKET_CLIENT_LIMIT_REQUESTS?: string;
+  /** The exact market admission's period in seconds; absent is 60. */
+  readonly MARKET_CLIENT_LIMIT_PERIOD_SECONDS?: string;
+}
+
+/**
  * The public gateway (`src/public.ts`): the private bindings plus the optional ones that shape a public deployment.
  * Every optional binding may be left out; the gateway then skips what it controls. It also reads the cache settings
  * and the `QUERY_*` limits (`QUERY_LIMIT_SETTING` in `@agris/core`), each optional.
+ *
+ * Every request, whatever its path, passes the rate-limit bindings first, when bound: they count per Cloudflare
+ * location and add no round trip. An execution that is about to call the market subgraph is then admitted exactly by
+ * its client's `GatewayAdmission` bucket, when `MARKET_CLIENT_LIMIT_REQUESTS` is set (`MarketAdmissionEnv`).
  */
-export interface PublicGatewayEnv extends GatewayEnv {
-  /** Limits each client, keyed by `CF-Connecting-IP`; absent limits no client. */
+export interface PublicGatewayEnv extends GatewayEnv, MarketAdmissionEnv {
+  /**
+   * Limits each client, keyed by `CF-Connecting-IP` (an IPv6 address by its /64); absent limits no client here.
+   * Cloudflare counts it per location and approximately.
+   */
   readonly CLIENT_RATE_LIMITER?: RateLimitPort;
-  /** Limits the whole deployment under one constant key; absent sets no deployment-wide limit. */
+  /** Limits the whole deployment under one constant key, counted per location; absent sets none. */
   readonly GLOBAL_RATE_LIMITER?: RateLimitPort;
   /** Serves every path that is not `/graphql` or `/health`. */
   readonly ASSETS?: AssetsPort;

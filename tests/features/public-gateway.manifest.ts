@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { env, createExecutionContext } from "cloudflare:test";
+import { env, createExecutionContext, evictDurableObject } from "cloudflare:test";
 import { withExports } from "cloudflare:workers";
 import { buildClientSchema, buildSchema, getIntrospectionQuery, type IntrospectionQuery } from "graphql";
 import { Schema } from "effect";
@@ -8,14 +8,21 @@ import websiteFavicon from "../../website/public/favicon.svg?raw";
 import { clientSchemaSdl } from "../../tools/schema/artifacts/gateway-schemas.ts";
 import { schemaElementDescriptions, undocumentedSchemaElements } from "../../tools/schema/src/schema-documentation.ts";
 import {
-  executeAgrisProxy,
-  serviceBindingPort,
+  executeCachedAgrisProxy,
   type AgrisProxyExecutionProps,
-  type AgrisProxyRuntimeEnv,
+  type BudgetedSubgraphServiceBinding,
 } from "../../apps/gateway/src/index.ts";
+import { admissionObjectName, type AdmissionNamespacePort } from "../../apps/gateway/src/admission.ts";
 import { publicAgrisProxyWorker, type PublicGatewayEnv, type RateLimitPort } from "../../apps/gateway/src/public.ts";
 
-import { noStepArguments, step, type ExecutableFeatureManifest, type StepDefinition } from "../support/manifest.ts";
+import {
+  integerPairStepArguments,
+  integerStepArgument,
+  noStepArguments,
+  step,
+  type ExecutableFeatureManifest,
+  type StepDefinition,
+} from "../support/manifest.ts";
 import { STRICT } from "../support/schema.ts";
 
 const ORIGIN = "https://agris.example";
@@ -32,6 +39,43 @@ interface PublicGatewayWorld {
   bodies?: readonly unknown[];
   pearlAbyssRequestsBefore?: number;
   gatewayEnv?: PublicGatewayEnv;
+  failure?: unknown;
+  /** The edge cache in front of the cached execution, when the case has one. */
+  edge?: EdgeCache;
+  /** The admission namespace the case's gateway binds, counting the requests it receives. */
+  admission?: CountingAdmission;
+  itemIds?: readonly string[];
+  /** The market subgraph calls the case's execution made, when it counts them. */
+  marketCalls?: readonly unknown[];
+}
+
+/** Workers Cache in front of the cached execution, keyed as it keys: by the cache key request's URL. */
+interface EdgeCache {
+  readonly entries: Map<string, Response>;
+  /** Whether every stored answer is past its freshness window, so a request refreshes it. */
+  expired: boolean;
+}
+
+/** An admission namespace that counts every request its objects receive. */
+interface CountingAdmission {
+  readonly namespace: AdmissionNamespacePort;
+  requests: number;
+}
+
+const CACHE_HIT_CLIENT = "198.51.100.25";
+const TWO_CALLS_CLIENT = "198.51.100.26";
+const CATALOG_ONLY_CLIENT = "198.51.100.27";
+const BURST_CLIENT = "198.51.100.20";
+const UNCACHED_CLIENT = "198.51.100.28";
+const STALE_CLIENT = "198.51.100.29";
+const EVICTED_CLIENT = "198.51.100.30";
+const RATE_CHANGE_CLIENT = "198.51.100.31";
+
+/** Market item IDs no other case asks for, so each query is a cache miss and a Pearl Abyss read. */
+let lastMarketItem = 31_000;
+function nextMarketItem(): string {
+  lastMarketItem += 1;
+  return String(lastMarketItem);
 }
 
 const decodeCatalogEntitiesRequest = Schema.decodeUnknownSync(
@@ -70,6 +114,22 @@ const decodeRateLimitedBody = Schema.decodeUnknownSync(
     ]),
   }),
   STRICT,
+);
+const decodeErrorCodesBody = Schema.decodeUnknownSync(
+  Schema.Struct({
+    errors: Schema.Array(Schema.Struct({ extensions: Schema.Struct({ code: Schema.String }) })),
+  }),
+);
+const decodeCatalogItemBody = Schema.decodeUnknownSync(
+  Schema.Struct({ data: Schema.Struct({ item: Schema.Struct({ name: Schema.String }) }) }),
+);
+const decodeTwoMarketCallsBody = Schema.decodeUnknownSync(
+  Schema.Struct({
+    data: Schema.Struct({
+      item: Schema.Struct({ marketSummary: Schema.Struct({ basePrice: Schema.Number }) }),
+      market: Schema.Struct({ items: Schema.Array(Schema.Struct({ basePrice: Schema.Number })) }),
+    }),
+  }),
 );
 const decodePearlAbyssObservation = Schema.decodeUnknownSync(
   Schema.Struct({ distinct: Schema.Number, total: Schema.Number }),
@@ -325,6 +385,306 @@ const steps: readonly StepDefinition<PublicGatewayWorld>[] = [
     const body = decodeOneErrorBody(await response.json());
     assert.ok(body.errors.length > 0);
   }),
+  step(
+    "a public gateway behind an edge cache that admits each client exactly {int} market execution(s) a minute",
+    integerStepArgument,
+    (world, limit) => {
+      world.admission = countingAdmission(admissionNamespace());
+      world.edge = { entries: new Map(), expired: false };
+      world.gatewayEnv = marketAdmittingEnv(world.admission, limit);
+    },
+  ),
+  step(
+    "a public gateway that stores nothing and admits each client exactly {int} market execution(s) a minute",
+    integerStepArgument,
+    (world, limit) => {
+      world.admission = countingAdmission(admissionNamespace());
+      world.gatewayEnv = Object.assign(marketAdmittingEnv(world.admission, limit), { CACHE_ENABLED: "false" });
+    },
+  ),
+  step("one client asks for the same market item twice", noStepArguments, async (world) => {
+    const item = nextMarketItem();
+    world.responses = [
+      await fetchWorld(world, marketItemQuery(CACHE_HIT_CLIENT, item)),
+      await fetchWorld(world, marketItemQuery(CACHE_HIT_CLIENT, item)),
+    ];
+    world.bodies = await Promise.all(requiredResponses(world).map((response) => response.clone().json()));
+  }),
+  step(
+    "the first answer is a cache miss and the second a cache hit, both with the Pearl Abyss item",
+    noStepArguments,
+    (world) => {
+      const responses = requiredResponses(world);
+      assert.deepEqual(
+        responses.map((response) => response.status),
+        [200, 200],
+        JSON.stringify(world.bodies),
+      );
+      assert.deepEqual(
+        responses.map((response) => response.headers.get("Cf-Cache-Status")),
+        ["MISS", "HIT"],
+      );
+      for (const body of world.bodies ?? []) {
+        assert.deepEqual(
+          decodeMarketItemBody(body).data.market.items.map(({ basePrice }) => basePrice),
+          [377_000],
+        );
+      }
+    },
+  ),
+  step("the admission objects were asked {int} time(s)", integerStepArgument, (world, count) => {
+    assert.equal(requiredAdmission(world).requests, count);
+  }),
+  step(
+    "one client asks in one query for an NA market item and for a catalog item's EU market summary",
+    noStepArguments,
+    async (world) => {
+      const query = `{ item(id: "${nextMarketItem()}") { name marketSummary(region: EU) { basePrice } } market(region: NA) { items(ids: ["${nextMarketItem()}"]) { basePrice } } }`;
+      const market = countingMarket(requiredGatewayEnv(world).MARKET);
+      world.gatewayEnv = { ...requiredGatewayEnv(world), MARKET: market.binding };
+      const response = await fetchWorld(world, graphqlPost(TWO_CALLS_CLIENT, query));
+      world.marketCalls = market.calls;
+      world.responses = [response];
+      world.bodies = [await response.clone().json()];
+    },
+  ),
+  step("the answer carries the market item and the market summary", noStepArguments, (world) => {
+    assert.equal(requiredResponse(world, 0).status, 200, JSON.stringify(world.bodies));
+    // The market item is a root field; the summary needs the catalog's item first, so it is a second market call.
+    assert.equal(world.marketCalls?.length, 2);
+    const body = decodeTwoMarketCallsBody(world.bodies?.[0]);
+    assert.equal(body.data.item.marketSummary.basePrice, 377_000);
+    assert.deepEqual(
+      body.data.market.items.map(({ basePrice }) => basePrice),
+      [377_000],
+    );
+  }),
+  step(
+    "one client asks for the names of {int} different items, one query each",
+    integerStepArgument,
+    async (world, count) => {
+      const responses: Response[] = [];
+      const ids: string[] = [];
+      for (let query = 0; query < count; query += 1) {
+        const id = nextMarketItem();
+        ids.push(id);
+        responses.push(await fetchWorld(world, graphqlPost(CATALOG_ONLY_CLIENT, `{ item(id: "${id}") { name } }`)));
+      }
+      world.responses = responses;
+      world.bodies = await Promise.all(responses.map((response) => response.clone().json()));
+      world.itemIds = ids;
+    },
+  ),
+  step("every answer is the item's catalog name", noStepArguments, (world) => {
+    assert.deepEqual(
+      requiredResponses(world).map((response) => response.status),
+      (world.itemIds ?? []).map(() => 200),
+      JSON.stringify(world.bodies),
+    );
+    assert.deepEqual(
+      (world.bodies ?? []).map((body) => decodeCatalogItemBody(body).data.item.name),
+      (world.itemIds ?? []).map((id) => `Catalog item ${id}`),
+    );
+  }),
+  step(
+    "one client sends {int} queries for different market items at once",
+    integerStepArgument,
+    async (world, count) => {
+      world.responses = await Promise.all(
+        Array.from({ length: count }, () => fetchWorld(world, marketItemQuery(BURST_CLIENT, nextMarketItem()))),
+      );
+    },
+  ),
+  step(
+    "one client sends {int} queries for different market items, one after the other",
+    integerStepArgument,
+    async (world, count) => {
+      const responses: Response[] = [];
+      for (let query = 0; query < count; query += 1) {
+        responses.push(await fetchWorld(world, marketItemQuery(UNCACHED_CLIENT, nextMarketItem())));
+      }
+      world.responses = responses;
+    },
+  ),
+  step(
+    "{int} queries are answered and {int} is/are answered 429 RATE_LIMITED with a Retry-After",
+    integerPairStepArguments,
+    async (world, answered, refused) => {
+      const responses = requiredResponses(world);
+      const statuses = responses.map((response) => response.status);
+      assert.equal(statuses.filter((status) => status === 200).length, answered, JSON.stringify(statuses));
+      assert.equal(statuses.filter((status) => status === 429).length, refused, JSON.stringify(statuses));
+      for (const response of responses.filter(({ status }) => status === 429)) await assertMarketRefused(response);
+    },
+  ),
+  step("another client's market query is still answered", noStepArguments, async (world) => {
+    const response = await fetchWorld(world, marketItemQuery("198.51.100.21", nextMarketItem()));
+    assert.equal(response.status, 200);
+  }),
+  step(
+    "one client's market item answer is cached and expires, and the client asks for it again",
+    noStepArguments,
+    async (world) => {
+      const item = nextMarketItem();
+      const first = await fetchWorld(world, marketItemQuery(STALE_CLIENT, item));
+      assert.equal(first.status, 200);
+      requiredEdge(world).expired = true;
+      const response = await fetchWorld(world, marketItemQuery(STALE_CLIENT, item));
+      world.responses = [response];
+      world.bodies = [await response.clone().json()];
+    },
+  ),
+  step(
+    "the gateway answers 200 with the cached market item, served stale because its refresh failed",
+    noStepArguments,
+    (world) => {
+      const response = requiredResponse(world, 0);
+      assert.equal(response.status, 200, JSON.stringify(world.bodies));
+      assert.equal(response.headers.get("Cf-Cache-Status"), "STALE");
+      assert.equal(response.headers.get("X-Central-Market-Source"), "cache-stale");
+      assert.deepEqual(
+        decodeMarketItemBody(world.bodies?.[0]).data.market.items.map(({ basePrice }) => basePrice),
+        [377_000],
+      );
+      assert.equal(requiredAdmission(world).requests, 2);
+    },
+  ),
+  step("the client asks for a market item the edge has never stored", noStepArguments, async (world) => {
+    world.responses = [await fetchWorld(world, marketItemQuery(STALE_CLIENT, nextMarketItem()))];
+  }),
+  step("the query is answered 429 RATE_LIMITED with a Retry-After", noStepArguments, async (world) => {
+    await assertMarketRefused(requiredResponse(world, 0));
+  }),
+  step("one client spends its allowance and its admission object is evicted", noStepArguments, async (world) => {
+    await spendAllowance(world, EVICTED_CLIENT, 2);
+    // The runtime tears the object down, as it does to an idle one; only what it stored survives.
+    await evictDurableObject(admissionNamespace().getByName(admissionObjectName(EVICTED_CLIENT)));
+    world.responses = [await fetchWorld(world, marketItemQuery(EVICTED_CLIENT, nextMarketItem()))];
+  }),
+  step(
+    "one client spends its allowance and the deployment raises the limit to {int} market executions a minute",
+    integerStepArgument,
+    async (world, limit) => {
+      await spendAllowance(world, RATE_CHANGE_CLIENT, 2);
+      world.gatewayEnv = marketAdmittingEnv(requiredAdmission(world), limit);
+      world.responses = [await fetchWorld(world, marketItemQuery(RATE_CHANGE_CLIENT, nextMarketItem()))];
+    },
+  ),
+  step(
+    "the client's next market query is answered 429 RATE_LIMITED with a Retry-After",
+    noStepArguments,
+    async (world) => {
+      await assertMarketRefused(requiredResponse(world, 0));
+    },
+  ),
+  step(
+    "two addresses in one IPv6 \\/64 send {int} market queries each, one after the other",
+    integerStepArgument,
+    async (world, count) => {
+      const responses: Response[] = [];
+      // The same /64, written once compressed and once in full.
+      for (const address of ["2001:db8:0:7::1", "2001:0db8:0000:0007:ffff::2"]) {
+        for (let query = 0; query < count; query += 1) {
+          responses.push(await fetchWorld(world, marketItemQuery(address, nextMarketItem())));
+        }
+      }
+      world.responses = responses;
+    },
+  ),
+  step(
+    "a caller over the client rate limit requests the health path and the site's home page",
+    noStepArguments,
+    async (world) => {
+      const gatewayEnv = publicEnv({ CLIENT_RATE_LIMITER: limiter(false), ASSETS: staticSite() });
+      world.responses = await Promise.all(
+        [healthGet("203.0.113.9"), homeGet("203.0.113.9")].map((request) => fetchPublicGateway(request, gatewayEnv)),
+      );
+    },
+  ),
+  step(
+    "the gateway answers each one 429 for the client scope with Retry-After 60 and the deploy guide",
+    noStepArguments,
+    async (world) => {
+      for (const response of requiredResponses(world)) await assertRateLimited(response, "client");
+    },
+  ),
+  step("a caller over the client rate limit sends a CORS preflight", noStepArguments, async (world) => {
+    const gatewayEnv = publicEnv({ CLIENT_RATE_LIMITER: limiter(false) });
+    world.responses = [await fetchPublicGateway(preflight("203.0.113.9"), gatewayEnv)];
+  }),
+  step(
+    "the gateway answers it 204 allowing GET, POST and OPTIONS, for the browser not to remember",
+    noStepArguments,
+    (world) => {
+      const response = requiredResponse(world, 0);
+      assert.equal(response.status, 204);
+      assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+      assert.equal(response.headers.get("Access-Control-Allow-Methods"), "GET, POST, OPTIONS");
+      assert.match(response.headers.get("Access-Control-Allow-Headers") ?? "", /Content-Type/u);
+      // The browser asks again before its next request, so a preflight admitted later is not skipped.
+      assert.equal(response.headers.get("Access-Control-Max-Age"), "0");
+      assert.equal(response.headers.get("Retry-After"), null);
+    },
+  ),
+  step(
+    "a caller within the client rate limit requests the health path, a CORS preflight and GraphiQL on a gateway that admits market executions exactly",
+    noStepArguments,
+    async (world) => {
+      world.admission = countingAdmission(admissionNamespace());
+      const gatewayEnv = { ...marketAdmittingEnv(world.admission, 1), CLIENT_RATE_LIMITER: limiter(true) };
+      const graphiql = new Request(`${ORIGIN}/graphql`, {
+        headers: { Accept: "text/html,application/xhtml+xml", "CF-Connecting-IP": "203.0.113.13" },
+      });
+      world.responses = [
+        await fetchPublicGateway(healthGet("203.0.113.13"), gatewayEnv),
+        await fetchPublicGateway(preflight("203.0.113.13"), gatewayEnv),
+        await fetchPublicGateway(graphiql, gatewayEnv),
+      ];
+    },
+  ),
+  step("each one is answered and the admission objects were asked 0 times", noStepArguments, (world) => {
+    assert.deepEqual(
+      requiredResponses(world).map((response) => response.status),
+      [200, 204, 200],
+    );
+    assert.equal(requiredAdmission(world).requests, 0);
+  }),
+  step(
+    "a caller sends a market query to a public gateway whose admission object fails",
+    noStepArguments,
+    async (world) => {
+      const failing: NonNullable<PublicGatewayEnv["ADMISSION"]> = {
+        getByName: () => ({ fetch: () => Promise.reject(new Error("Durable Object overloaded")) }),
+      };
+      const gatewayEnv = publicEnv({ ADMISSION: failing, MARKET_CLIENT_LIMIT_REQUESTS: "3" });
+      world.responses = [await fetchPublicGateway(marketItemQuery("203.0.113.11", nextMarketItem()), gatewayEnv)];
+    },
+  ),
+  step("the query is answered 429 RATE_LIMITED with Retry-After 5", noStepArguments, async (world) => {
+    const response = requiredResponse(world, 0);
+    assert.equal(response.headers.get("Retry-After"), "5");
+    await assertMarketRefused(response);
+  }),
+  step(
+    "a caller sends a request to a public gateway that sets an exact market limit but binds no admission object",
+    noStepArguments,
+    async (world) => {
+      try {
+        world.responses = [
+          await fetchPublicGateway(
+            marketItemQuery("203.0.113.12", nextMarketItem()),
+            publicEnv({ MARKET_CLIENT_LIMIT_REQUESTS: "3" }),
+          ),
+        ];
+      } catch (error: unknown) {
+        world.failure = error;
+      }
+    },
+  ),
+  step("the request fails instead of being admitted", noStepArguments, (world) => {
+    assert.ok(world.failure instanceof TypeError, JSON.stringify(world.responses?.map(({ status }) => status)));
+    assert.match(world.failure.message, /ADMISSION/u);
+  }),
 ];
 
 const decodeIntrospectionBody = Schema.decodeUnknownSync(
@@ -383,7 +743,14 @@ function publicEnv(overrides: Partial<PublicGatewayEnv> = {}): PublicGatewayEnv 
 
 const namingCatalog = {
   async fetchWithBudget(request: Request): Promise<Response> {
-    const { variables } = decodeCatalogEntitiesRequest(await request.json());
+    const body: unknown = await request.json();
+    const rootItem = rootItemRequestOf(body);
+    if (rootItem !== undefined) {
+      return Response.json({
+        data: { item: { __typename: "Item", id: rootItem, locale: "EN", name: `Catalog item ${rootItem}` } },
+      });
+    }
+    const { variables } = decodeCatalogEntitiesRequest(body);
     return Response.json({
       data: {
         _entities: variables.representations.map(({ id, locale }) => ({
@@ -397,21 +764,66 @@ const namingCatalog = {
   },
 };
 
-async function fetchPublicGateway(request: Request, gatewayEnv: PublicGatewayEnv): Promise<Response> {
-  const runtimeEnv: AgrisProxyRuntimeEnv = {
-    MARKET: serviceBindingPort(gatewayEnv.MARKET),
-    CATALOG: serviceBindingPort(gatewayEnv.CATALOG),
-  };
-  // The cached entrypoint runs the operation uncached here: each case asserts what the public surface adds, and
-  // `worker-entrypoints.feature` owns the cache behaviour.
+/* BOUNDARY: A catalog request for the root `item` field, which names its item ID in the document; else `undefined`. */
+function rootItemRequestOf(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null || !("query" in body) || typeof body.query !== "string") {
+    return undefined;
+  }
+  if (body.query.includes("_entities")) return undefined;
+  // Hive Gateway passes the ID as a variable or writes it into the document.
+  const variables: unknown = "variables" in body ? body.variables : undefined;
+  const fromVariables =
+    typeof variables === "object" && variables !== null
+      ? Object.values(variables).find((value): value is string => typeof value === "string" && /^\d+$/u.test(value))
+      : undefined;
+  return fromVariables ?? /"(\d+)"/u.exec(body.query)?.[1];
+}
+
+/**
+ * The public gateway with the cached entrypoint's own miss execution behind it. Without an `edge`, every storable
+ * operation runs uncached: those cases assert what the public surface adds, and `worker-entrypoints.feature` owns the
+ * cache behaviour. With one, the edge answers as Workers Cache does: a fresh stored answer is a HIT; otherwise the
+ * operation executes, and when a stored answer exists and the execution failed with a 5xx (`stale-if-error`), the
+ * stored answer is served STALE.
+ */
+async function fetchPublicGateway(request: Request, gatewayEnv: PublicGatewayEnv, edge?: EdgeCache): Promise<Response> {
   const cachedAgrisProxy = ({ props }: { readonly props: AgrisProxyExecutionProps }) => ({
-    fetch: () => executeAgrisProxy(runtimeEnv, props),
+    fetch: (cacheKey: Request) =>
+      edgeCached(edge, cacheKey, () => executeCachedAgrisProxy(gatewayEnv, props, cacheKey)),
   });
   const result: unknown = await withExports({ CachedAgrisProxy: cachedAgrisProxy }, () =>
     publicAgrisProxyWorker.fetch(request, gatewayEnv, createExecutionContext()),
   );
   if (!(result instanceof Response)) throw new TypeError("The public gateway did not return a Response");
   return result;
+}
+
+async function edgeCached(
+  edge: EdgeCache | undefined,
+  cacheKey: Request,
+  execute: () => Promise<Response>,
+): Promise<Response> {
+  if (edge === undefined) return execute();
+  const stored = edge.entries.get(cacheKey.url);
+  if (stored !== undefined && !edge.expired) return withCacheStatus(stored.clone(), "HIT");
+  const response = await execute();
+  if (stored !== undefined && response.status >= 500) return withCacheStatus(stored.clone(), "STALE");
+  if (response.ok && response.headers.get("Cache-Control") !== "no-store") {
+    edge.entries.set(cacheKey.url, response.clone());
+    edge.expired = false;
+  }
+  return withCacheStatus(response, stored === undefined ? "MISS" : "EXPIRED");
+}
+
+function withCacheStatus(response: Response, status: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set("cf-cache-status", status);
+  return new Response(response.body, { status: response.status, headers });
+}
+
+/** The case's gateway, behind the case's edge cache when it has one. */
+function fetchWorld(world: PublicGatewayWorld, request: Request): Promise<Response> {
+  return fetchPublicGateway(request, requiredGatewayEnv(world), world.edge);
 }
 
 function marketItemPost(): Request {
@@ -460,6 +872,129 @@ async function readPearlAbyssObservation(): Promise<{ readonly distinct: number;
   const response = await observer.fetch("https://pa-observer.internal/");
   assert.equal(response.status, 200);
   return decodePearlAbyssObservation(await response.json());
+}
+
+/** A public gateway whose executions admit each client's market calls exactly `limit` times a minute. */
+function marketAdmittingEnv(admission: CountingAdmission, limit: number): PublicGatewayEnv {
+  return publicEnv({ ADMISSION: admission.namespace, MARKET_CLIENT_LIMIT_REQUESTS: String(limit) });
+}
+
+/** The test Worker's real `GatewayAdmission` namespace. */
+function admissionNamespace(): DurableObjectNamespace {
+  // SAFETY: The Vitest Miniflare configuration binds ADMISSION to the gateway's own GatewayAdmission class.
+  const admission = (env as Cloudflare.Env & { readonly ADMISSION?: DurableObjectNamespace }).ADMISSION;
+  assert.ok(admission, "The test Worker binds no ADMISSION namespace");
+  return admission;
+}
+
+/** The market Worker's binding, recording every subgraph call made through it. */
+function countingMarket(inner: Fetcher): { readonly binding: Fetcher; readonly calls: unknown[] } {
+  const calls: unknown[] = [];
+  // SAFETY: The gateway reaches the market only through `fetchWithBudget` (`serviceBindingPort`), which this forwards.
+  const budgeted = inner as unknown as BudgetedSubgraphServiceBinding;
+  const binding = {
+    fetchWithBudget: (...call: Parameters<BudgetedSubgraphServiceBinding["fetchWithBudget"]>) => {
+      calls.push(call);
+      return budgeted.fetchWithBudget(...call);
+    },
+  };
+  // SAFETY: As above, the one method the gateway calls on a market binding is the one this object has.
+  return { binding: binding as unknown as Fetcher, calls };
+}
+
+/** `inner`, counting every request its objects receive. */
+function countingAdmission(inner: AdmissionNamespacePort): CountingAdmission {
+  const counting: CountingAdmission = {
+    requests: 0,
+    namespace: {
+      getByName: (name) => {
+        const stub = inner.getByName(name);
+        return {
+          fetch: (request) => {
+            counting.requests += 1;
+            return stub.fetch(request);
+          },
+        };
+      },
+    },
+  };
+  return counting;
+}
+
+/** Send `count` queries for different market items from one client, one after the other, each admitted. */
+async function spendAllowance(world: PublicGatewayWorld, clientAddress: string, count: number): Promise<void> {
+  for (let query = 0; query < count; query += 1) {
+    const response = await fetchWorld(world, marketItemQuery(clientAddress, nextMarketItem()));
+    assert.equal(response.status, 200);
+  }
+}
+
+function requiredAdmission(world: PublicGatewayWorld): CountingAdmission {
+  assert.ok(world.admission);
+  return world.admission;
+}
+
+function requiredEdge(world: PublicGatewayWorld): EdgeCache {
+  assert.ok(world.edge);
+  return world.edge;
+}
+
+function requiredGatewayEnv(world: PublicGatewayWorld): PublicGatewayEnv {
+  assert.ok(world.gatewayEnv);
+  return world.gatewayEnv;
+}
+
+function graphqlPost(clientAddress: string, query: string): Request {
+  return new Request(`${ORIGIN}/graphql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "CF-Connecting-IP": clientAddress },
+    body: JSON.stringify({ query }),
+  });
+}
+
+/** A cacheable query for one NA market item, which reaches Pearl Abyss on a miss. */
+function marketItemQuery(clientAddress: string, itemId: string): Request {
+  return graphqlPost(
+    clientAddress,
+    `{ market(region: NA) { items(ids: ["${itemId}"]) { item { id name } basePrice } } }`,
+  );
+}
+
+function healthGet(clientAddress: string): Request {
+  return new Request(`${ORIGIN}/health`, { headers: { "CF-Connecting-IP": clientAddress } });
+}
+
+function homeGet(clientAddress: string): Request {
+  return new Request(`${ORIGIN}/`, { headers: { "CF-Connecting-IP": clientAddress } });
+}
+
+function preflight(clientAddress: string): Request {
+  return new Request(`${ORIGIN}/graphql`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://elsewhere.example",
+      "Access-Control-Request-Method": "POST",
+      "CF-Connecting-IP": clientAddress,
+    },
+  });
+}
+
+/**
+ * A market call the client's admission refused: a 429 whose Retry-After is the whole seconds until the bucket admits
+ * one more, with the market's own `RATE_LIMITED` error and none of the gateway's internal headers.
+ */
+async function assertMarketRefused(response: Response): Promise<void> {
+  assert.equal(response.status, 429);
+  const retryAfter = response.headers.get("Retry-After") ?? "";
+  assert.match(retryAfter, /^[1-9][0-9]*$/u);
+  assert.ok(Number(retryAfter) <= 60, retryAfter);
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+  assert.equal(response.headers.get("X-Agris-Upstream-Outcome"), null);
+  const body = decodeErrorCodesBody(await response.json());
+  assert.ok(
+    body.errors.some(({ extensions }) => extensions.code === "RATE_LIMITED"),
+    JSON.stringify(body),
+  );
 }
 
 function requiredResponses(world: PublicGatewayWorld): readonly Response[] {
