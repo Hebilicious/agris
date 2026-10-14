@@ -6,6 +6,11 @@ export const PULL_REQUESTS = `${REPOSITORY}/pulls`;
 export const README_CREDITS = `${REPOSITORY}#credits`;
 export const ENVELOP_PLUGINS = "https://the-guild.dev/graphql/envelop/plugins";
 
+/** The proto version `.prototools` pins; a test holds every install instruction to it. */
+export const PROTO_VERSION = "0.63.1";
+/** proto's own installer from that release, which checks the SHA-256 of the build it downloads. */
+export const PROTO_INSTALLER = `https://github.com/moonrepo/proto/releases/download/v${PROTO_VERSION}/proto_cli-installer.sh`;
+
 /** Where this site is published: static files only, with no API behind them. */
 export const SITE_ORIGIN = "https://agris-docs.hebilicious.workers.dev";
 

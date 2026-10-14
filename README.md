@@ -140,7 +140,9 @@ Only the gateway is public. More in [docs/architecture.md](docs/architecture.md)
 You need a Cloudflare account, plus `git` and `curl`. The default settings deploy on the Workers Free plan; a paid plan lets you raise `SUBREQUEST_LIMIT`.
 
 ```sh
-curl -fsSL https://moonrepo.dev/install/proto.sh | bash   # installs the pinned Node.js, pnpm and moon
+curl -fsSLO https://github.com/moonrepo/proto/releases/download/v0.63.1/proto_cli-installer.sh   # proto 0.63.1, as .prototools pins
+echo "e33cc6e6e1834ac3d769e311415b4a12013ae33fe2b27cdcf34340a62d97c2b6  proto_cli-installer.sh" | sha256sum -c
+PROTO_HOME="$HOME/.proto" PROTO_CLI_NO_MODIFY_PATH=1 sh proto_cli-installer.sh && ~/.proto/bin/proto setup   # open a new shell after
 git clone https://github.com/Hebilicious/agris.git && cd agris
 proto install && pnpm install
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...   # an "Edit Cloudflare Workers" token

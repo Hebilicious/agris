@@ -38,7 +38,21 @@ tasks:
     command: "vitest"
     args: ["run", "--config", "vitest.headless.config.ts"]
     deps: ["typecheck"]
-    inputs: ["features/**/*", "support/**/*.ts", "*.ts", "package.json", "@group(agris-sources)"]
+    # The toolchain install feature reads the install instructions and the proto pin.
+    inputs:
+      - "features/**/*"
+      - "support/**/*.ts"
+      - "*.ts"
+      - "package.json"
+      - "@group(agris-sources)"
+      - "/.prototools"
+      - "/README.md"
+      - "/CONTRIBUTING.md"
+      - "/docs/deploy.md"
+      - "/.agents/skills/deploy-agris/SKILL.md"
+      - "/website/src/site.ts"
+      - "/website/src/pages/index.astro"
+      - "/website/src/pages/llms.txt.ts"
 
   test-integration:
     description: "Run the federated graph's Node integration Feature evidence."

@@ -15,5 +15,6 @@ Some things to keep in mind:
 - To fix an item name, edit `data/catalog/<locale>/items.json` (and add the `LOCALE:itemId` key to `data/catalog/same-as-english.json` when the correct name equals English), then run `moon run catalog-tools:validate` and `moon run catalog-tools:generate` and commit both. See [docs/research/catalog-names-and-locales.md](docs/research/catalog-names-and-locales.md).
 - Website changes live in `website/` (Astro). Preview with `moon run website:dev`. Write for people, not for the code: plain words, no links to files in the repository, and no cache, rate or limit number typed by hand (read it through `website/src/facts.ts`).
 - Do not commit account IDs, API tokens or other credentials.
+- Report a security problem privately, as [SECURITY.md](SECURITY.md) explains, not in an issue or pull request.
 
 By contributing you agree that your work is released under the [MIT license](LICENSE).
