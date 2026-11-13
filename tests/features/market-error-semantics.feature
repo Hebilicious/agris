@@ -78,7 +78,7 @@ Feature: Market error semantics
   Scenario: Market.catalog without a category is refused before any work
     Given Pearl Abyss answers every request
     When a caller asks the gateway for the EU catalog without a category
-    Then the gateway answers 400 that the query is invalid for the schema, with no Pearl Abyss request
+    Then the gateway answers 422 that the query is invalid for the schema, with no Pearl Abyss request
     And the client schema requires Market.catalog's category
 
   @scenario:market-client-input-errors @provenance:spec @i0

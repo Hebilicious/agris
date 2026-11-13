@@ -89,18 +89,24 @@ export interface NormalizedGatewayRequest {
 }
 
 export type GatewayProtocolErrorCode =
+  | "body-too-large"
   | "invalid-content-type"
   | "invalid-document"
   | "invalid-method"
   | "invalid-request"
   | "invalid-variables"
+  | "malformed-document"
+  | "malformed-json"
   | "operation-not-query"
-  | "query-too-complex";
+  | "query-too-complex"
+  | "url-too-long";
+
+export type GatewayProtocolErrorStatus = 400 | 405 | 413 | 414 | 415 | 422;
 
 export interface GatewayProtocolError {
   readonly code: GatewayProtocolErrorCode;
   readonly message: string;
-  readonly status: 400 | 405 | 415;
+  readonly status: GatewayProtocolErrorStatus;
 }
 
 export type GatewayProtocolResult =

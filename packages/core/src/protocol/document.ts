@@ -32,9 +32,12 @@ export function canonicalizeGraphqlDocument(documentNode: DocumentNode): string 
   return stripIgnoredCharacters(print(documentNode));
 }
 
+/** Why a document was refused: it does not parse, it fails validation, or its operation is not a query. */
+export type DocumentValidationFailureKind = "malformed" | "document" | "operation";
+
 export type DocumentValidationResult =
   | { readonly ok: true; readonly value: ValidatedDocument }
-  | { readonly ok: false; readonly kind: "document" | "operation"; readonly message: string };
+  | { readonly ok: false; readonly kind: DocumentValidationFailureKind; readonly message: string };
 
 export type VariableValidationResult =
   | { readonly ok: true; readonly value: ValidatedVariables }
@@ -49,7 +52,7 @@ export async function validateQueryDocument(
   try {
     documentNode = parse(source);
   } catch {
-    return { ok: false, kind: "document", message: "The GraphQL document is malformed" };
+    return { ok: false, kind: "malformed", message: "The GraphQL document is malformed" };
   }
 
   const operations = documentNode.definitions.filter(

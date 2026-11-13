@@ -149,7 +149,7 @@ export async function handleAgrisProxyRequest(
   if (requestUrl.pathname !== GRAPHQL_PATH) return gatewayError(404, "Not found");
 
   const bodyText = await readBoundedGatewayRequestBody(request);
-  if (bodyText === undefined) return gatewayError(400, "GraphQL request body exceeds the accepted size");
+  if (bodyText === undefined) return gatewayError(413, "GraphQL request body exceeds the accepted size");
   const normalized = await privateProtocol(env.cacheFreshness).normalize({
     method: request.method,
     contentType: request.headers.get("content-type"),

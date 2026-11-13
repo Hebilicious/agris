@@ -2,6 +2,10 @@ import {
   createPublicGatewayRequestProtocol,
   DEFAULT_CACHE_FRESHNESS,
   documentLimitsFromBindings,
+  GRAPHQL_RESPONSE_MEDIA_TYPE,
+  LEGACY_JSON_MEDIA_TYPE,
+  negotiateGraphqlResponseMediaType,
+  protocolFailure,
   publicGetBody,
   readBoundedGatewayRequestBody,
   readPersistedOperationDocuments,
@@ -111,7 +115,8 @@ async function route(
   host: PublicGatewayHost,
   clientKey: string,
 ) {
-  if (url.pathname === GRAPHQL_PATH) return serveGraphql(request, url, env, host, clientKey);
+  if (url.pathname === GRAPHQL_PATH)
+    return varyByAccept(await serveGraphql(request, url, env, host, clientKey), request);
   if (url.pathname === HEALTH_PATH) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: PREFLIGHT_HEADERS });
     if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed("GET, HEAD, OPTIONS");
@@ -160,7 +165,8 @@ async function normalizePost(
   protocol: GatewayRequestProtocol,
 ): Promise<GatewayProtocolResult> {
   const bodyText = await readBoundedGatewayRequestBody(request);
-  if (bodyText === undefined) return invalidRequest("GraphQL request body exceeds the accepted size");
+  if (bodyText === undefined)
+    return protocolFailure("body-too-large", "GraphQL request body exceeds the accepted size");
   return protocol.normalize({
     method: "POST",
     contentType: request.headers.get("content-type"),
@@ -244,6 +250,24 @@ function publicProtocol(
 }
 
 /**
+ * Every answer at the GraphQL path depends on the request's `Accept` header: it picks GraphiQL or data, and a client
+ * that prefers `application/json` to `application/graphql-response+json` gets its `2xx` answers labelled
+ * `application/json` (`negotiateGraphqlResponseMediaType`). `Vary: Accept` keeps a browser or a shared cache from
+ * handing one client's label to another. The edge cache in front of executions keys on its own request, so this
+ * changes nothing it stores.
+ */
+function varyByAccept(response: Response, request: Request): Response {
+  const headers = new Headers(response.headers);
+  headers.append("Vary", "Accept");
+  const legacy = negotiateGraphqlResponseMediaType(request.headers.get("accept")) === LEGACY_JSON_MEDIA_TYPE;
+  const contentType = headers.get("Content-Type") ?? "";
+  if (legacy && response.ok && contentType.startsWith(GRAPHQL_RESPONSE_MEDIA_TYPE)) {
+    headers.set("Content-Type", `${LEGACY_JSON_MEDIA_TYPE}${contentType.slice(GRAPHQL_RESPONSE_MEDIA_TYPE.length)}`);
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+/**
  * A browser navigating to `/graphql` gets GraphiQL unless the deployment turned it off: on the bare path, or on a link
  * that carries `?query=`, which GraphiQL opens so a link can share a query. Any other GET, such as a persisted
  * `?id=`, is a request for data and gets its result, as it does for API clients that do not ask for HTML.
@@ -278,8 +302,4 @@ function methodNotAllowed(allow: string): Response {
   const response = gatewayError(405, `Use one of ${allow}`);
   response.headers.set("Allow", allow);
   return response;
-}
-
-function invalidRequest(message: string): GatewayProtocolResult {
-  return { ok: false, error: { status: 400, code: "invalid-request", message } };
 }

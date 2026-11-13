@@ -6,22 +6,22 @@ Feature: Agris Proxy request protocol
   Scenario: Disallowed GraphQL-over-HTTP shapes fail closed
     Given a Central Market summary query
     When the Agris Proxy normalizes these disallowed requests
-      | case                      | error                       |
-      | request array             | invalid-request             |
-      | malformed JSON body       | invalid-request             |
-      | missing content type      | invalid-content-type        |
-      | malformed content type    | invalid-content-type        |
-      | multipart body            | invalid-content-type        |
-      | variables array           | invalid-variables           |
-      | prototype-shaped variable | invalid-variables           |
-      | missing required variable | invalid-variables           |
-      | malformed query document  | invalid-document            |
-      | multiple operations       | invalid-document            |
-      | mutation                  | operation-not-query         |
-      | subscription              | operation-not-query         |
-      | GET request               | invalid-method              |
-      | unsupported method        | invalid-method              |
-    Then every disallowed request is rejected with its specified protocol error
+      | case                      | error                | status |
+      | request array             | invalid-request      | 422    |
+      | malformed JSON body       | malformed-json       | 400    |
+      | missing content type      | invalid-content-type | 415    |
+      | malformed content type    | invalid-content-type | 415    |
+      | multipart body            | invalid-content-type | 415    |
+      | variables array           | invalid-variables    | 422    |
+      | prototype-shaped variable | invalid-variables    | 422    |
+      | missing required variable | invalid-variables    | 422    |
+      | malformed query document  | malformed-document   | 400    |
+      | multiple operations       | invalid-document     | 422    |
+      | mutation                  | operation-not-query  | 422    |
+      | subscription              | operation-not-query  | 422    |
+      | GET request               | invalid-method       | 405    |
+      | unsupported method        | invalid-method       | 405    |
+    Then every disallowed request is rejected with its specified protocol error and status
 
   @scenario:reject-persisted-hash-mismatch @provenance:minimal @i0
   Scenario: The application's approved-operation list cannot mislabel a query document

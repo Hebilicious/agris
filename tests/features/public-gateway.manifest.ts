@@ -17,6 +17,7 @@ import { graphiqlContentSecurityPolicy, RenderedPages } from "../../apps/gateway
 import { publicAgrisProxyWorker, type PublicGatewayEnv, type RateLimitPort } from "../../apps/gateway/src/public.ts";
 
 import {
+  dataTableStepArgument,
   integerPairStepArguments,
   integerStepArgument,
   noStepArguments,
@@ -48,6 +49,8 @@ interface PublicGatewayWorld {
   itemIds?: readonly string[];
   /** The market subgraph calls the case's execution made, when it counts them. */
   marketCalls?: readonly unknown[];
+  /** Each row of a table of requests, with what the table expects of its response. */
+  rows?: readonly { readonly name: string; readonly expected: string; readonly response: Response }[];
 }
 
 /** Workers Cache in front of the cached execution, keyed as it keys: by the cache key request's URL. */
@@ -391,7 +394,7 @@ const steps: readonly StepDefinition<PublicGatewayWorld>[] = [
   }),
   step("the gateway answers that a query is required instead of GraphiQL", noStepArguments, async (world) => {
     const response = requiredResponse(world, 0);
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 422);
     assert.doesNotMatch(response.headers.get("Content-Type") ?? "", /text\/html/u);
     const body = decodeOneErrorBody(await response.json());
     assert.ok(body.errors.length > 0);
@@ -773,7 +776,103 @@ const steps: readonly StepDefinition<PublicGatewayWorld>[] = [
       assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
     }
   }),
+  step("these requests are sent to the public gateway", dataTableStepArgument, async (world, table) => {
+    const rows = [];
+    for (const row of table.hashes) {
+      const name = row.case;
+      const expected = row.status;
+      assert.ok(name && expected);
+      rows.push({ name, expected, response: await fetchPublicGateway(requestErrorCase(name), publicEnv()) });
+    }
+    world.rows = rows;
+  }),
+  step("each request gets its status with a GraphQL error body that is not stored", noStepArguments, async (world) => {
+    assert.ok(world.rows && world.rows.length > 0);
+    for (const { name, expected, response } of world.rows) {
+      const text = await response.text();
+      assert.equal(response.status, Number(expected), `${name}: ${text}`);
+      assert.equal(response.headers.get("Content-Type"), GRAPHQL_RESPONSE_CONTENT_TYPE, name);
+      assert.equal(response.headers.get("Cache-Control"), "no-store", name);
+      assert.ok(decodeOneErrorBody(JSON.parse(text)).errors[0].message !== "", name);
+    }
+  }),
+  step(
+    "the same market item is requested by POST with these Accept headers",
+    dataTableStepArgument,
+    async (world, table) => {
+      const rows = [];
+      for (const row of table.hashes) {
+        const accept = row.accept;
+        const expected = row["content type"];
+        assert.ok(accept && expected);
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (accept !== "none") headers.Accept = accept;
+        const request = new Request(`${ORIGIN}/graphql`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ query: MARKET_ITEM_QUERY, variables: MARKET_ITEM_VARIABLES }),
+        });
+        rows.push({ name: accept, expected, response: await fetchPublicGateway(request, publicEnv()) });
+      }
+      world.rows = rows;
+    },
+  ),
+  step("each answer has its content type, and every answer varies by Accept", noStepArguments, async (world) => {
+    assert.ok(world.rows && world.rows.length > 0);
+    for (const { name, expected, response } of world.rows) {
+      assert.equal(response.status, 200, `${name}: ${await response.clone().text()}`);
+      assert.equal(response.headers.get("Content-Type"), `${expected}; charset=utf-8`, name);
+      assert.match(response.headers.get("Vary") ?? "", /\bAccept\b/u, name);
+      decodeMarketItemBody(await response.json());
+    }
+  }),
+  step(
+    "a refused query from a client that accepts only JSON is still labelled a GraphQL response",
+    noStepArguments,
+    async () => {
+      const request = new Request(`${ORIGIN}/graphql`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ query: "{ nope }" }),
+      });
+      const response = await fetchPublicGateway(request, publicEnv());
+      assert.equal(response.status, 422);
+      assert.equal(response.headers.get("Content-Type"), GRAPHQL_RESPONSE_CONTENT_TYPE);
+      assert.match(response.headers.get("Vary") ?? "", /\bAccept\b/u);
+    },
+  ),
 ];
+
+const GRAPHQL_RESPONSE_CONTENT_TYPE = "application/graphql-response+json; charset=utf-8";
+
+/** One row of the request-error table, as a client would send it. */
+function requestErrorCase(name: string): Request {
+  const post = (body: string, contentType = "application/json") =>
+    new Request(`${ORIGIN}/graphql`, { method: "POST", headers: { "Content-Type": contentType }, body });
+  const query = (text: string, variables?: unknown) => JSON.stringify({ query: text, variables });
+  switch (name) {
+    case "malformed JSON body":
+      return post('{"query":');
+    case "unparsable document":
+      return post(query("{ market("));
+    case "field the schema does not have":
+      return post(query("{ nope }"));
+    case "variables of the wrong type":
+      return post(query(MARKET_ITEM_QUERY, { region: "NOWHERE", ids: ["10006"] }));
+    case "mutation by GET":
+      return new Request(`${ORIGIN}/graphql?query=${encodeURIComponent("mutation Change { nope }")}`);
+    case "body over the size limit":
+      return post(query(`{ __typename } # ${"x".repeat(70_000)}`));
+    case "URL over the size limit":
+      return new Request(`${ORIGIN}/graphql?query=${encodeURIComponent(`{ __typename } # ${"x".repeat(70_000)}`)}`);
+    case "unsupported content type":
+      return post(query("{ __typename }"), "text/plain");
+    case "unsupported method":
+      return new Request(`${ORIGIN}/graphql`, { method: "PUT", body: query("{ __typename }") });
+    default:
+      throw new TypeError(`Unknown request case: ${name}`);
+  }
+}
 
 const decodeIntrospectionBody = Schema.decodeUnknownSync(
   Schema.Struct({
