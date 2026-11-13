@@ -37,8 +37,12 @@ Feature: Public query protocol
       | repeated variables         | invalid-request   |
       | unexpected parameter       | invalid-request   |
       | variables that are not JSON | invalid-variables |
+      | extensions object          | body              |
+      | extensions that are not JSON | invalid-request |
+      | empty optional parameters  | body              |
     Then every query string meets its specified outcome
     And the persisted id reads as the inline query with the same variables
+    And empty optional parameters read as if they were absent
 
   @scenario:public-introspection-limits @provenance:spec @i1
   Scenario: Introspection is admitted as deep as GraphiQL needs but cannot recurse through the schema
@@ -52,10 +56,13 @@ Feature: Public query protocol
     Then every query meets its specified outcome
 
   @scenario:public-extensions @provenance:spec @i1
-  Scenario: Only the public protocol accepts the GraphQL-over-HTTP extensions object
+  Scenario: The public protocol ignores body properties it does not understand, as GraphQL over HTTP requires
     When a query with an empty extensions object is sent to the public and to the private protocol
     Then the public protocol accepts it and the private protocol refuses it
     And the public protocol refuses extensions that are not an object
+    When a query with a property GraphQL over HTTP does not define is sent to the public and to the private protocol
+    Then the public protocol ignores the property and the private protocol refuses it
+    And both protocols read null variables as no variables
 
   @scenario:public-query-limit-settings @provenance:spec @i1
   Scenario: A deployment sets or lifts each query limit with its own QUERY_ variable

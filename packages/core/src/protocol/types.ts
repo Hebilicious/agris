@@ -24,10 +24,11 @@ export interface GatewayRequestProtocolInput {
   /** Shorthand that replaces `cacheFreshness.minimumSeconds`; see `selectGatewayCachePolicy`. */
   readonly freshnessFloorSeconds?: number;
   /**
-   * Accept, and ignore, the GraphQL-over-HTTP `extensions` object in a POST body, which clients such as GraphiQL send.
-   * The private protocol leaves it off: its callers send exactly `query`, `operationName` and `variables`.
+   * Read a POST body as the GraphQL over HTTP specification asks: accept the `extensions` object, which clients such as
+   * GraphiQL send, and ignore it with every other property the protocol does not understand. The private protocol
+   * leaves it off and refuses them: its callers send exactly `query`, `operationName` and `variables`.
    */
-  readonly acceptExtensions?: boolean;
+  readonly graphqlOverHttpBody?: boolean;
 }
 
 export interface GatewayProtocolRequest {

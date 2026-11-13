@@ -18,7 +18,7 @@ Rules every request follows:
 
 - **Queries only.** Mutations and subscriptions are rejected with `400`.
 - **One operation per document.** Fragments are allowed. If `operationName` is given, it must match the operation's name.
-- **POST bodies** must be `Content-Type: application/json` (an optional `charset=utf-8` is accepted), contain one JSON object, and use only the keys `query`, `variables`, `operationName` and `extensions` (a JSON object, accepted and ignored, as GraphiQL sends it). A POST must not carry query-string parameters. Batched arrays are rejected.
+- **POST bodies** must be `Content-Type: application/json` (an optional `charset=utf-8` is accepted), and contain one JSON object with `query`, and optionally `variables`, `operationName` and `extensions` (a JSON object, accepted and ignored, as GraphiQL sends it). Other properties are ignored, as GraphQL over HTTP requires, and a `null` optional property counts as absent. A POST must not carry query-string parameters. Batched arrays are rejected.
 - **`variables`** must be a JSON object and must satisfy the operation's variable types.
 - **CORS** is open (`Access-Control-Allow-Origin: *`), so a browser page on any origin can call your gateway.
 - **GraphiQL** is on by default: a browser that opens `/graphql`, or a `/graphql?query=` link, gets an interactive editor. Any other browser GET, such as a persisted `?id=`, gets the data like any other client. Set the gateway's `GRAPHIQL` binding to `"disabled"` to turn it off. Introspection-only queries, which GraphiQL sends, are exempt from the document limits below.
@@ -44,7 +44,7 @@ curl -G https://<your-host>/graphql \
   --data-urlencode 'variables={"region":"EU","ids":["44195"],"locale":"EN"}'
 ```
 
-A GET takes exactly one of `query` or `id` (64 lowercase hex characters), plus optional `variables` (a JSON object) and `operationName`; any other parameter, or one given twice, is rejected with `400`. The repository ships one example operation, `MarketItemsWithCatalog`. To add your own, list it in `tools/schema/src/generate.ts`, run `moon run schema:generate`, and redeploy; `moon run schema:check` rejects a document whose hash does not match.
+A GET takes exactly one of `query` or `id` (64 lowercase hex characters), plus optional `variables` (a JSON object), `operationName` and `extensions` (a JSON object, accepted and ignored). A parameter given as the empty string counts as absent. Any other parameter, or one given twice, is rejected with `400`. The repository ships one example operation, `MarketItemsWithCatalog`. To add your own, list it in `tools/schema/src/generate.ts`, run `moon run schema:generate`, and redeploy; `moon run schema:check` rejects a document whose hash does not match.
 
 ## Schema overview
 
