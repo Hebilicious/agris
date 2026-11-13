@@ -287,11 +287,11 @@ const steps: readonly StepDefinition<MarketErrorSemanticsWorld>[] = [
     assert.deepEqual(world.summaryBatches, [itemIds(100)]);
   }),
   step(
-    "the gateway answers 400 that the query is invalid for the schema, with no Pearl Abyss request",
+    "the gateway answers 422 that the query is invalid for the schema, with no Pearl Abyss request",
     noStepArguments,
     (world) => {
       const answer = onlyAnswer(world);
-      assert.equal(answer.status, 400, JSON.stringify(answer.body));
+      assert.equal(answer.status, 422, JSON.stringify(answer.body));
       assert.deepEqual(answer.body.errors?.[0]?.message, "The GraphQL query is invalid for this schema");
       assert.equal(world.pearlAbyssRequests, 0);
     },

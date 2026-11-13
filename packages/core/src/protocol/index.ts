@@ -4,7 +4,13 @@ import { applyCacheFreshnessOverride, DEFAULT_CACHE_FRESHNESS, type CacheFreshne
 import { selectGatewayCachePolicy } from "./cache-policy.js";
 import { operationResultIdentity, syntheticGetKey } from "./identity.js";
 export { dispatchGatewayOperation, type GatewayOperationDispatchPort } from "./operation-result.js";
-import { validateQueryDocument, validateVariables, type ValidatedDocument } from "./document.js";
+import {
+  validateQueryDocument,
+  validateVariables,
+  type DocumentValidationFailureKind,
+  type ValidatedDocument,
+} from "./document.js";
+import { protocolFailure } from "./protocol-error.js";
 import {
   checkDocumentLimits,
   introspectionLimitsFor,
@@ -13,7 +19,7 @@ import {
   type GatewayDocumentLimits,
 } from "./document-limits.js";
 import type {
-  GatewayProtocolError,
+  GatewayProtocolErrorCode,
   GatewayProtocolRequest,
   GatewayProtocolResult,
   GatewayRequestProtocol,
@@ -56,6 +62,13 @@ export {
 } from "./document-limits.js";
 export { readPersistedOperationDocuments, validatePersistedOperations } from "./persisted-operations.js";
 export { publicGetBody, type PublicGetBodyResult } from "./public-get.js";
+export { GATEWAY_PROTOCOL_ERROR_STATUS, protocolFailure } from "./protocol-error.js";
+export {
+  GRAPHQL_RESPONSE_MEDIA_TYPE,
+  LEGACY_JSON_MEDIA_TYPE,
+  negotiateGraphqlResponseMediaType,
+  type GraphqlResponseMediaType,
+} from "./media-type.js";
 export {
   isPersistedOperationId,
   parseCanonicalPersistedGet,
@@ -65,6 +78,7 @@ export {
 export type {
   GatewayProtocolError,
   GatewayProtocolErrorCode,
+  GatewayProtocolErrorStatus,
   GatewayProtocolRequest,
   GatewayProtocolResult,
   GatewayCachePolicy,
@@ -96,7 +110,7 @@ export function createGatewayRequestProtocol(input: GatewayRequestProtocolInput)
     normalize: (request) =>
       request.method === "POST"
         ? normalizePost(input, freshness, request)
-        : Promise.resolve(failure(405, "invalid-method", "Only GraphQL POST requests are accepted")),
+        : Promise.resolve(protocolFailure("invalid-method", "Only GraphQL POST requests are accepted")),
   };
 }
 
@@ -142,41 +156,41 @@ const PRIVATE_BODY_KEYS: ReadonlySet<string> = new Set(["query", "operationName"
 ): Promise<GatewayProtocolResult> {
   const { schema } = input;
   if (!isJsonContentType(request.contentType)) {
-    return failure(415, "invalid-content-type", "GraphQL POST requests require application/json with UTF-8 charset");
+    return protocolFailure("invalid-content-type", "GraphQL POST requests require application/json with UTF-8 charset");
   }
   if (request.searchParams !== "") {
-    return failure(400, "invalid-request", "GraphQL POST requests cannot include query parameters");
+    return protocolFailure("invalid-request", "GraphQL POST requests cannot include query parameters");
   }
   if (request.bodyText === null || request.bodyText.trim() === "") {
-    return failure(400, "invalid-request", "GraphQL POST requests require one JSON request object");
+    return protocolFailure("malformed-json", "GraphQL POST requests require one JSON request object");
   }
 
   let body: unknown;
   try {
     body = JSON.parse(request.bodyText);
   } catch {
-    return failure(400, "invalid-request", "The GraphQL POST body is malformed JSON");
+    return protocolFailure("malformed-json", "The GraphQL POST body is malformed JSON");
   }
   if (!isRecord(body)) {
-    return failure(400, "invalid-request", "The GraphQL POST body must be one request object");
+    return protocolFailure("invalid-request", "The GraphQL POST body must be one request object");
   }
   if (input.graphqlOverHttpBody === true) {
     if (body.extensions !== undefined && body.extensions !== null && !isRecord(body.extensions)) {
-      return failure(400, "invalid-request", "GraphQL extensions must be a JSON object when supplied");
+      return protocolFailure("invalid-request", "GraphQL extensions must be a JSON object when supplied");
     }
   } else if (Object.keys(body).some((key) => !PRIVATE_BODY_KEYS.has(key))) {
-    return failure(400, "invalid-request", "The GraphQL POST body contains unsupported properties");
+    return protocolFailure("invalid-request", "The GraphQL POST body contains unsupported properties");
   }
   if (typeof body.query !== "string" || body.query.trim() === "") {
-    return failure(400, "invalid-request", "The GraphQL POST body requires a query document");
+    return protocolFailure("invalid-request", "The GraphQL POST body requires a query document");
   }
   if (body.operationName !== undefined && body.operationName !== null && typeof body.operationName !== "string") {
-    return failure(400, "invalid-request", "GraphQL operationName must be a string when supplied");
+    return protocolFailure("invalid-request", "GraphQL operationName must be a string when supplied");
   }
   // GraphQL over HTTP reads a null optional parameter as an absent one.
   const variables = body.variables ?? {};
   if (!isRecord(variables)) {
-    return failure(400, "invalid-variables", "GraphQL variables must be a JSON object");
+    return protocolFailure("invalid-variables", "GraphQL variables must be a JSON object");
   }
 
   const documentResult = await validateQueryDocument(
@@ -185,9 +199,7 @@ const PRIVATE_BODY_KEYS: ReadonlySet<string> = new Set(["query", "operationName"
     typeof body.operationName === "string" ? body.operationName : null,
   );
   if (!documentResult.ok) {
-    return documentResult.kind === "operation"
-      ? failure(400, "operation-not-query", documentResult.message)
-      : failure(400, "invalid-document", documentResult.message);
+    return protocolFailure(DOCUMENT_FAILURE_CODES[documentResult.kind], documentResult.message);
   }
 
   if (input.documentLimits !== undefined) {
@@ -197,7 +209,7 @@ const PRIVATE_BODY_KEYS: ReadonlySet<string> = new Set(["query", "operationName"
       ? introspectionLimitsFor(input.documentLimits)
       : input.documentLimits;
     const limitResult = checkDocumentLimits(documentResult.value, limits);
-    if (!limitResult.ok) return failure(400, "query-too-complex", limitResult.message);
+    if (!limitResult.ok) return protocolFailure("query-too-complex", limitResult.message);
   }
 
   return finishNormalization(schema, documentResult.value, variables, freshness);
@@ -210,7 +222,7 @@ const PRIVATE_BODY_KEYS: ReadonlySet<string> = new Set(["query", "operationName"
   freshness: CacheFreshnessPolicy,
 ): Promise<GatewayProtocolResult> {
   const variablesResult = validateVariables(schema, document, rawVariables);
-  if (!variablesResult.ok) return failure(400, "invalid-variables", variablesResult.message);
+  if (!variablesResult.ok) return protocolFailure("invalid-variables", variablesResult.message);
   const operationIdentity = await operationResultIdentity(
     document.canonicalDocument,
     variablesResult.value.canonicalText,
@@ -250,10 +262,8 @@ function isJsonContentType(value: string | null): boolean {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function failure(
-  status: GatewayProtocolError["status"],
-  code: GatewayProtocolError["code"],
-  message: string,
-): GatewayProtocolResult {
-  return { ok: false, error: { status, code, message } };
-}
+const DOCUMENT_FAILURE_CODES = {
+  malformed: "malformed-document",
+  document: "invalid-document",
+  operation: "operation-not-query",
+} as const satisfies Record<DocumentValidationFailureKind, GatewayProtocolErrorCode>;

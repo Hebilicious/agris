@@ -90,6 +90,7 @@ const GET_CASES: Readonly<Record<string, string>> = {
   "extensions object": `id=${PERSISTED_ID}&variables=${GET_VARIABLES}&extensions=${encodeURIComponent('{"trace":true}')}`,
   "extensions that are not JSON": `id=${PERSISTED_ID}&extensions=%7Btrace`,
   "empty optional parameters": `query=&id=${PERSISTED_ID}&variables=&operationName=&extensions=`,
+  "query string over the limit": `id=${PERSISTED_ID}&variables=${encodeURIComponent(JSON.stringify({ pad: "x".repeat(70_000) }))}`,
 };
 
 interface PublicQueryProtocolWorld {
@@ -97,6 +98,7 @@ interface PublicQueryProtocolWorld {
   outcomes?: readonly {
     readonly caseName: string;
     readonly expected: string;
+    readonly status: number;
     readonly result: GatewayProtocolResult;
   }[];
   withoutFloor?: Readonly<Record<FreshnessQuery, GatewayCachePolicy>>;
@@ -105,6 +107,7 @@ interface PublicQueryProtocolWorld {
   getOutcomes?: readonly {
     readonly caseName: string;
     readonly expected: string;
+    readonly status: number;
     readonly result: PublicGetBodyResult;
   }[];
   extensionOutcomes?: {
@@ -223,12 +226,12 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
       assert.ok(expected);
       const search = GET_CASES[caseName];
       assert.ok(search !== undefined, `Unknown GET case: ${caseName}`);
-      return { caseName, expected, result: publicGetBody(search, persistedDocuments) };
+      return { caseName, expected, status: Number(row.status), result: publicGetBody(search, persistedDocuments) };
     });
   }),
   step("every query string meets its specified outcome", noStepArguments, (world) => {
     assert.ok(world.getOutcomes);
-    for (const { caseName, expected, result } of world.getOutcomes) {
+    for (const { caseName, expected, status, result } of world.getOutcomes) {
       if (expected === "body") {
         assert.equal(result.ok, true, `${caseName}: ${result.ok ? "" : result.error.message}`);
         continue;
@@ -236,7 +239,7 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
       assert.equal(result.ok, false, `${caseName} was unexpectedly accepted`);
       if (result.ok) continue;
       assert.equal(result.error.code, expected, caseName);
-      assert.equal(result.error.status, 400, caseName);
+      assert.equal(result.error.status, status, caseName);
     }
   }),
   step("the persisted id reads as the inline query with the same variables", noStepArguments, (world) => {
@@ -325,7 +328,7 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
   }),
   step("every query meets its specified outcome", noStepArguments, (world) => {
     assert.ok(world.outcomes);
-    for (const { caseName, expected, result } of world.outcomes) {
+    for (const { caseName, expected, status, result } of world.outcomes) {
       if (expected === "accepted") {
         assert.equal(result.ok, true, `${caseName}: ${result.ok ? "" : result.error.message}`);
         continue;
@@ -333,7 +336,7 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
       assert.equal(result.ok, false, `${caseName} was unexpectedly accepted`);
       if (result.ok) continue;
       assert.equal(result.error.code, expected, caseName);
-      assert.equal(result.error.status, 400, caseName);
+      assert.equal(result.error.status, status, caseName);
     }
   }),
   step(
@@ -406,7 +409,7 @@ async function normalizeCases(
       assert.ok(expected);
       const query = cases[caseName];
       assert.ok(query, `Unknown query case: ${caseName}`);
-      return { caseName, expected, result: await protocol.normalize(postRequest(query)) };
+      return { caseName, expected, status: Number(row.status), result: await protocol.normalize(postRequest(query)) };
     }),
   );
 }

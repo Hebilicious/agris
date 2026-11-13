@@ -54,11 +54,11 @@ const checks: [string, () => void][] = [
     },
   ],
   [
-    "a refused document is errors with its 400 status",
+    "a refused document is errors with its 422 status",
     () => {
-      const result = classify(answer(400, '{"errors":[{"message":"Cannot query field \\"nope\\""}]}'));
+      const result = classify(answer(422, '{"errors":[{"message":"Cannot query field \\"nope\\""}]}'));
       assert.equal(result.kind, "errors");
-      if (result.kind === "errors") assert.equal(result.status, 400);
+      if (result.kind === "errors") assert.equal(result.status, 422);
     },
   ],
   [

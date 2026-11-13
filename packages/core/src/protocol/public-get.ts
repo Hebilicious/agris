@@ -1,4 +1,5 @@
 import { isPersistedOperationId } from "./persisted-get.js";
+import { protocolFailure } from "./protocol-error.js";
 import type { GatewayProtocolResult } from "./types.js";
 
 export { PUBLIC_DOCUMENT_LIMITS } from "./document-limits.js";
@@ -22,29 +23,31 @@ export type PublicGetBodyResult =
  */
 export function publicGetBody(search: string, persistedDocuments: ReadonlyMap<string, string>): PublicGetBodyResult {
   if (search.length > MAXIMUM_PUBLIC_GET_SEARCH_BYTES)
-    return invalidRequest("GraphQL request URL exceeds the accepted size");
+    return protocolFailure("url-too-long", "GraphQL request URL exceeds the accepted size");
   const given = [...new URLSearchParams(search)].filter(([, value]) => value !== "");
   const names = given.map(([name]) => name);
   if (names.some((name) => !PUBLIC_GET_PARAMETERS.has(name))) {
-    return invalidRequest("GraphQL GET requests accept only query, id, variables, operationName and extensions");
+    return protocolFailure(
+      "invalid-request",
+      "GraphQL GET requests accept only query, id, variables, operationName and extensions",
+    );
   }
-  if (new Set(names).size !== names.length) return invalidRequest("GraphQL GET parameters may appear only once");
+  if (new Set(names).size !== names.length)
+    return protocolFailure("invalid-request", "GraphQL GET parameters may appear only once");
   const parameters = new Map(given);
 
   const id = parameters.get("id");
   const inlineQuery = parameters.get("query");
   if ((id === undefined) === (inlineQuery === undefined)) {
-    return invalidRequest("GraphQL GET requests require exactly one of query or id");
+    return protocolFailure("invalid-request", "GraphQL GET requests require exactly one of query or id");
   }
   const query = id === undefined ? inlineQuery : isPersistedOperationId(id) ? persistedDocuments.get(id) : undefined;
-  if (query === undefined) return invalidRequest("Unknown persisted operation id");
+  if (query === undefined) return protocolFailure("invalid-request", "Unknown persisted operation id");
 
   const variables = jsonParameter(parameters.get("variables"));
-  if (!variables.ok) {
-    return { ok: false, error: { status: 400, code: "invalid-variables", message: "GraphQL variables must be JSON" } };
-  }
+  if (!variables.ok) return protocolFailure("malformed-json", "GraphQL variables must be JSON");
   const extensions = jsonParameter(parameters.get("extensions"));
-  if (!extensions.ok) return invalidRequest("GraphQL extensions must be JSON");
+  if (!extensions.ok) return protocolFailure("malformed-json", "GraphQL extensions must be JSON");
 
   return {
     ok: true,
@@ -67,8 +70,4 @@ function jsonParameter(
   } catch {
     return { ok: false };
   }
-}
-
-function invalidRequest(message: string): Extract<GatewayProtocolResult, { readonly ok: false }> {
-  return { ok: false, error: { status: 400, code: "invalid-request", message } };
 }

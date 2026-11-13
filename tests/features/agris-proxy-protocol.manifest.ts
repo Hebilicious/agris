@@ -46,6 +46,7 @@ interface GatewayProtocolWorld {
   rejections?: readonly {
     readonly caseName: string;
     readonly expectedCode: string;
+    readonly expectedStatus: number;
     readonly result: GatewayProtocolResult;
   }[];
   manifestFailure?: unknown;
@@ -66,24 +67,31 @@ const steps: readonly StepDefinition<GatewayProtocolWorld>[] = [
       table.hashes.map(async (row) => {
         const caseName = row.case;
         const expectedCode = row.error;
+        const expectedStatus = Number(row.status);
         assert.ok(caseName);
         assert.ok(expectedCode);
         return {
           caseName,
           expectedCode,
+          expectedStatus,
           result: await protocol.normalize(disallowedRequest(caseName)),
         };
       }),
     );
   }),
-  step("every disallowed request is rejected with its specified protocol error", noStepArguments, (world) => {
-    assert.ok(world.rejections);
-    for (const rejection of world.rejections) {
-      assert.equal(rejection.result.ok, false, `${rejection.caseName} was unexpectedly accepted`);
-      if (rejection.result.ok) continue;
-      assert.equal(rejection.result.error.code, rejection.expectedCode, rejection.caseName);
-    }
-  }),
+  step(
+    "every disallowed request is rejected with its specified protocol error and status",
+    noStepArguments,
+    (world) => {
+      assert.ok(world.rejections);
+      for (const rejection of world.rejections) {
+        assert.equal(rejection.result.ok, false, `${rejection.caseName} was unexpectedly accepted`);
+        if (rejection.result.ok) continue;
+        assert.equal(rejection.result.error.code, rejection.expectedCode, rejection.caseName);
+        assert.equal(rejection.result.error.status, rejection.expectedStatus, rejection.caseName);
+      }
+    },
+  ),
   step(
     "an approved-operation list assigns the summary query to another lowercase hash",
     noStepArguments,

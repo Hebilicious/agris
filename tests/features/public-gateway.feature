@@ -106,6 +106,35 @@ Feature: Public gateway
     When a caller sends a request to a public gateway that sets an exact market limit but binds no admission object
     Then the request fails instead of being admitted
 
+  @scenario:public-gateway-request-errors @provenance:spec @i1
+  Scenario: Each request error carries the status GraphQL over HTTP gives it
+    When these requests are sent to the public gateway
+      | case                           | status |
+      | malformed JSON body            | 400    |
+      | unparsable document            | 400    |
+      | field the schema does not have | 422    |
+      | variables of the wrong type    | 422    |
+      | mutation by GET                | 422    |
+      | body over the size limit       | 413    |
+      | URL over the size limit        | 414    |
+      | unsupported content type       | 415    |
+      | unsupported method             | 405    |
+    Then each request gets its status with a GraphQL error body that is not stored
+
+  @scenario:public-gateway-media-types @provenance:spec @i1
+  Scenario: A client that accepts only application/json gets its successful answers as application/json
+    When the same market item is requested by POST with these Accept headers
+      | accept                                                    | content type                      |
+      | none                                                      | application/graphql-response+json |
+      | application/graphql-response+json                         | application/graphql-response+json |
+      | application/json                                          | application/json                  |
+      | application/json, */*                                     | application/graphql-response+json |
+      | application/graphql-response+json;q=0.9, application/json | application/json                  |
+      | application/json, application/graphql-response+json;q=0   | application/json                  |
+      | text/plain                                                | application/graphql-response+json |
+    Then each answer has its content type, and every answer varies by Accept
+    And a refused query from a client that accepts only JSON is still labelled a GraphQL response
+
   @scenario:public-gateway-demo-and-assets @provenance:spec @i2
   Scenario: A demo deployment labels every response and serves its site
     Given a public gateway with a demo notice and a static site
