@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { buildSchema, getIntrospectionQuery } from "graphql";
+import { buildSchema, getIntrospectionQuery, type GraphQLSchema } from "graphql";
 
 import {
   createGatewayRequestProtocol,
@@ -85,8 +85,11 @@ const GET_CASES: Readonly<Record<string, string>> = {
   "both query and id": `query=${encodeURIComponent(PERSISTED_QUERY)}&id=${PERSISTED_ID}`,
   "neither query nor id": `variables=${GET_VARIABLES}`,
   "repeated variables": `id=${PERSISTED_ID}&variables=${GET_VARIABLES}&variables=${GET_VARIABLES}`,
-  "unexpected parameter": `id=${PERSISTED_ID}&extensions=%7B%7D`,
+  "unexpected parameter": `id=${PERSISTED_ID}&debug=1`,
   "variables that are not JSON": `id=${PERSISTED_ID}&variables=%7Bregion`,
+  "extensions object": `id=${PERSISTED_ID}&variables=${GET_VARIABLES}&extensions=${encodeURIComponent('{"trace":true}')}`,
+  "extensions that are not JSON": `id=${PERSISTED_ID}&extensions=%7Btrace`,
+  "empty optional parameters": `query=&id=${PERSISTED_ID}&variables=&operationName=&extensions=`,
 };
 
 interface PublicQueryProtocolWorld {
@@ -108,6 +111,10 @@ interface PublicQueryProtocolWorld {
     readonly public: GatewayProtocolResult;
     readonly private: GatewayProtocolResult;
     readonly publicNotObject: GatewayProtocolResult;
+  };
+  unknownPropertyOutcomes?: {
+    readonly public: GatewayProtocolResult;
+    readonly private: GatewayProtocolResult;
   };
   limitSettings?: readonly { readonly bindings: string; readonly expected: Readonly<Record<string, string>> }[];
 }
@@ -233,11 +240,16 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
     }
   }),
   step("the persisted id reads as the inline query with the same variables", noStepArguments, (world) => {
-    const bodies = new Map(
-      (world.getOutcomes ?? []).flatMap(({ caseName, result }) => (result.ok ? [[caseName, result.bodyText]] : [])),
-    );
+    const bodies = getBodies(world);
     assert.ok(bodies.get("persisted id"));
     assert.equal(bodies.get("persisted id"), bodies.get("inline query"));
+  }),
+  step("empty optional parameters read as if they were absent", noStepArguments, (world) => {
+    const persistedDocuments = world.persistedDocuments;
+    assert.ok(persistedDocuments);
+    const absent = publicGetBody(`id=${PERSISTED_ID}`, persistedDocuments);
+    assert.ok(absent.ok);
+    assert.equal(getBodies(world).get("empty optional parameters"), absent.bodyText);
   }),
   step(
     "a request protocol with a depth limit of 3, a field limit of 6 and an alias limit of 2",
@@ -253,10 +265,9 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
     world.outcomes = await normalizeCases(world.protocol, table.hashes, LIMIT_CASES);
   }),
   step("the public request protocol", noStepArguments, (world) => {
-    world.protocol = createGatewayRequestProtocol({
+    world.protocol = createPublicGatewayRequestProtocol({
       schema: limitsSchema,
       documentLimits: PUBLIC_DOCUMENT_LIMITS,
-      acceptExtensions: true,
     });
   }),
   step("the protocol normalizes these introspection queries", dataTableStepArgument, async (world, table) => {
@@ -266,7 +277,7 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
     "a query with an empty extensions object is sent to the public and to the private protocol",
     noStepArguments,
     async (world) => {
-      const publicProtocol = createGatewayRequestProtocol({ schema: limitsSchema, acceptExtensions: true });
+      const publicProtocol = publicProtocolFor(limitsSchema);
       const privateProtocol = createGatewayRequestProtocol({ schema: limitsSchema });
       world.extensionOutcomes = {
         public: await publicProtocol.normalize(postRequest(EXTENSIONS_QUERY, {})),
@@ -285,6 +296,32 @@ const steps: readonly StepDefinition<PublicQueryProtocolWorld>[] = [
     const refused = world.extensionOutcomes?.publicNotObject;
     assert.ok(refused && !refused.ok);
     assert.equal(refused.error.code, "invalid-request");
+  }),
+  step(
+    "a query with a property GraphQL over HTTP does not define is sent to the public and to the private protocol",
+    noStepArguments,
+    async (world) => {
+      const body = JSON.stringify({ query: EXTENSIONS_QUERY, documentId: "unknown", trace: true });
+      world.unknownPropertyOutcomes = {
+        public: await publicProtocolFor(limitsSchema).normalize(postBody(body)),
+        private: await createGatewayRequestProtocol({ schema: limitsSchema }).normalize(postBody(body)),
+      };
+    },
+  ),
+  step("the public protocol ignores the property and the private protocol refuses it", noStepArguments, (world) => {
+    const outcomes = world.unknownPropertyOutcomes;
+    assert.ok(outcomes);
+    assert.equal(outcomes.public.ok, true, outcomes.public.ok ? undefined : outcomes.public.error.message);
+    assert.ok(!outcomes.private.ok);
+    assert.equal(outcomes.private.error.code, "invalid-request");
+  }),
+  step("both protocols read null variables as no variables", noStepArguments, async () => {
+    const body = JSON.stringify({ query: EXTENSIONS_QUERY, variables: null });
+    for (const protocol of [publicProtocolFor(limitsSchema), createGatewayRequestProtocol({ schema: limitsSchema })]) {
+      const result = await protocol.normalize(postBody(body));
+      assert.equal(result.ok, true, result.ok ? undefined : result.error.message);
+      assert.equal(result.value.canonicalVariables, "{}");
+    }
   }),
   step("every query meets its specified outcome", noStepArguments, (world) => {
     assert.ok(world.outcomes);
@@ -337,12 +374,22 @@ export const publicQueryProtocolFeature: ExecutableFeatureManifest<PublicQueryPr
 };
 
 function postRequest(query: string, extensions?: unknown) {
-  return {
-    method: "POST",
-    contentType: "application/json",
-    searchParams: "",
-    bodyText: JSON.stringify(extensions === undefined ? { query } : { query, extensions }),
-  };
+  return postBody(JSON.stringify(extensions === undefined ? { query } : { query, extensions }));
+}
+
+function postBody(bodyText: string) {
+  return { method: "POST", contentType: "application/json", searchParams: "", bodyText };
+}
+
+/** The public protocol, with the public query limits, which every query here meets. */
+function publicProtocolFor(schema: GraphQLSchema): GatewayRequestProtocol {
+  return createPublicGatewayRequestProtocol({ schema, documentLimits: PUBLIC_DOCUMENT_LIMITS });
+}
+
+function getBodies(world: PublicQueryProtocolWorld): ReadonlyMap<string, string> {
+  return new Map(
+    (world.getOutcomes ?? []).flatMap(({ caseName, result }) => (result.ok ? [[caseName, result.bodyText]] : [])),
+  );
 }
 
 async function normalizeCases(

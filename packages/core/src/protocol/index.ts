@@ -111,15 +111,15 @@ export interface PublicGatewayRequestProtocolInput {
 }
 
 /**
- * The public gateway's request protocol: the private protocol plus the public document limits, and the
- * GraphQL-over-HTTP `extensions` object that clients such as GraphiQL send. Every public caller, and the website that
+ * The public gateway's request protocol: the private protocol plus the public document limits, and a POST body read as
+ * GraphQL over HTTP asks, which accepts `extensions` and ignores properties it does not understand. Every public caller, and the website that
  * checks its example queries, builds it here so they cannot disagree about what a public query may be.
  */
 export function createPublicGatewayRequestProtocol(input: PublicGatewayRequestProtocolInput): GatewayRequestProtocol {
   return createGatewayRequestProtocol({
     schema: input.schema,
     documentLimits: input.documentLimits ?? PUBLIC_DOCUMENT_LIMITS,
-    acceptExtensions: true,
+    graphqlOverHttpBody: true,
     ...(input.cacheFreshness === undefined ? {} : { cacheFreshness: input.cacheFreshness }),
     ...(input.freshnessFloorSeconds === undefined ? {} : { freshnessFloorSeconds: input.freshnessFloorSeconds }),
   });
@@ -132,9 +132,8 @@ function effectiveFreshness(input: GatewayRequestProtocolInput): CacheFreshnessP
     : applyCacheFreshnessOverride(policy, { minimumSeconds: input.freshnessFloorSeconds });
 }
 
-/** The POST body keys each protocol reads; the public one also takes the GraphQL-over-HTTP `extensions`, and ignores it. */
+/** The POST body keys the private protocol reads; it refuses any other, while the public protocol ignores them. */
 const PRIVATE_BODY_KEYS: ReadonlySet<string> = new Set(["query", "operationName", "variables"]);
-const PUBLIC_BODY_KEYS: ReadonlySet<string> = new Set([...PRIVATE_BODY_KEYS, "extensions"]);
 
 /* BOUNDARY: Validates or normalizes external data before owned code consumes it. */ async function normalizePost(
   input: GatewayRequestProtocolInput,
@@ -161,12 +160,12 @@ const PUBLIC_BODY_KEYS: ReadonlySet<string> = new Set([...PRIVATE_BODY_KEYS, "ex
   if (!isRecord(body)) {
     return failure(400, "invalid-request", "The GraphQL POST body must be one request object");
   }
-  const allowedKeys = input.acceptExtensions === true ? PUBLIC_BODY_KEYS : PRIVATE_BODY_KEYS;
-  if (Object.keys(body).some((key) => !allowedKeys.has(key))) {
+  if (input.graphqlOverHttpBody === true) {
+    if (body.extensions !== undefined && body.extensions !== null && !isRecord(body.extensions)) {
+      return failure(400, "invalid-request", "GraphQL extensions must be a JSON object when supplied");
+    }
+  } else if (Object.keys(body).some((key) => !PRIVATE_BODY_KEYS.has(key))) {
     return failure(400, "invalid-request", "The GraphQL POST body contains unsupported properties");
-  }
-  if (body.extensions !== undefined && body.extensions !== null && !isRecord(body.extensions)) {
-    return failure(400, "invalid-request", "GraphQL extensions must be a JSON object when supplied");
   }
   if (typeof body.query !== "string" || body.query.trim() === "") {
     return failure(400, "invalid-request", "The GraphQL POST body requires a query document");
@@ -174,7 +173,9 @@ const PUBLIC_BODY_KEYS: ReadonlySet<string> = new Set([...PRIVATE_BODY_KEYS, "ex
   if (body.operationName !== undefined && body.operationName !== null && typeof body.operationName !== "string") {
     return failure(400, "invalid-request", "GraphQL operationName must be a string when supplied");
   }
-  if (body.variables !== undefined && !isRecord(body.variables)) {
+  // GraphQL over HTTP reads a null optional parameter as an absent one.
+  const variables = body.variables ?? {};
+  if (!isRecord(variables)) {
     return failure(400, "invalid-variables", "GraphQL variables must be a JSON object");
   }
 
@@ -199,7 +200,7 @@ const PUBLIC_BODY_KEYS: ReadonlySet<string> = new Set([...PRIVATE_BODY_KEYS, "ex
     if (!limitResult.ok) return failure(400, "query-too-complex", limitResult.message);
   }
 
-  return finishNormalization(schema, documentResult.value, body.variables ?? {}, freshness);
+  return finishNormalization(schema, documentResult.value, variables, freshness);
 }
 
 /* BOUNDARY: Validates or normalizes external data before owned code consumes it. */ async function finishNormalization(
